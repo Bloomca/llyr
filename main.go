@@ -17,7 +17,8 @@ func main() {
 
 	pr := os.Args[1]
 
-	prepareRepo(pr)
+	repoDir := prepareRepo(pr)
+	review(config, repoDir)
 }
 
 func checkConfiguration() config {
