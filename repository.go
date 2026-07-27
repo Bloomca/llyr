@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-func prepareRepo(link string) string {
+func prepareRepo(link string) (string, pullRequest) {
 	pr, err := parsePullRequestLink(link)
 
 	if err != nil {
@@ -29,7 +29,7 @@ func prepareRepo(link string) string {
 	repoDir := clone(pr)
 	checkout(repoDir, pr.number)
 
-	return repoDir
+	return repoDir, pr
 }
 
 type pullRequest struct {
@@ -124,7 +124,7 @@ func clone(pr pullRequest) string {
 		return repoDir
 	} else {
 		if err = ghStream("", "repo", "clone", pr.slug(), repoDir); err != nil {
-			fmt.Errorf("cloning %s: %w", pr.slug(), err)
+			fmt.Printf("cloning %s: %v", pr.slug(), err)
 			os.Exit(1)
 		}
 
@@ -134,7 +134,7 @@ func clone(pr pullRequest) string {
 
 func checkout(repoDir string, prNumber int) {
 	if err := ghStream(repoDir, "pr", "checkout", strconv.Itoa(prNumber)); err != nil {
-		fmt.Printf("Could not checkout the PR %s at the %s", prNumber, repoDir)
+		fmt.Printf("Could not checkout the PR %d at the %s", prNumber, repoDir)
 		os.Exit(1)
 	}
 }
