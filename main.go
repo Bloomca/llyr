@@ -4,15 +4,37 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func main() {
-	checkConfiguration()
+	config := checkConfiguration()
+
+	if len(os.Args) == 1 {
+		os.Exit(0)
+	}
+
+	pr := os.Args[1]
+
+	if !validateURL(pr) {
+		fmt.Println("You need to provide a valid GH pull request link")
+		os.Exit(1)
+	}
 }
 
-func checkConfiguration() {
+func validateURL(link string) bool {
+	u, err := url.Parse(strings.TrimSpace(link))
+
+	if err != nil {
+		return false
+	}
+
+}
+
+func checkConfiguration() config {
 	homeDir, err := os.UserHomeDir()
 
 	if err != nil {
@@ -67,14 +89,24 @@ func checkConfiguration() {
 	}
 
 	if !exists {
-		// create a config file
-	}
+		config, err := createConfig()
 
-	// 1. check that the folder ~home/.llyr exists
-	// 2. if not, create it
-	// 3. check the configuration file (tool + gh)
-	// 4. if gh is not installed, exit
-	// 5. allow user to select the review agent
+		if err != nil {
+			fmt.Println("Could not create config file: ", err)
+			os.Exit(1)
+		}
+
+		return config
+	} else {
+		config, err := parseConfig(configFile)
+
+		if err != nil {
+			fmt.Println("Could not parse config file: ", err)
+			os.Exit(1)
+		}
+
+		return config
+	}
 }
 
 func directoryExists(dir string) (bool, error) {

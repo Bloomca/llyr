@@ -18,13 +18,21 @@ func (c config) save() error {
 	if err != nil {
 		return err
 	}
-	configPath := filepath.Join(homeDir, ".llyr", "")
+	configPath := filepath.Join(homeDir, ".llyr", "config.json")
 
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(configPath, data, 0644)
+}
+
+func createConfig() (config, error) {
+	config := config{Version: 1, AgentTool: ""}
+	config.setTool()
+	err := config.save()
+
+	return config, err
 }
 
 func parseConfig(fileName string) (config, error) {
