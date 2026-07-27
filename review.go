@@ -37,7 +37,7 @@ Once you have a good understanding of the project, go ahead and review the chang
 Provide the output in a JSON format with the following schema:
 {
   overview: string
-  feedback: { level: 'p1' | 'p2' | 'p3'; file: string; line: number }[]
+  feedback: { level: 'p1' | 'p2' | 'p3'; file: string; line: number; text: string }[]
 }
 `
 

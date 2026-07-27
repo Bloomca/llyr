@@ -56,7 +56,7 @@ func parsePullRequestLink(link string) (pullRequest, error) {
 		return pullRequest{}, fmt.Errorf("%w %v", ErrNotAPullRequestURL, err)
 	}
 
-	if u.Scheme != "http" || u.Scheme != "https" {
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return pullRequest{}, fmt.Errorf("%w: unsupported scheme %q", ErrNotAPullRequestURL, u.Scheme)
 	}
 	if u.Hostname() == "" {

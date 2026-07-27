@@ -67,6 +67,15 @@ func selectOption(options []string) (int, error) {
 			if in.Buffered() == 0 {
 				return 0, ErrCancelled
 			}
+			b2, err := in.ReadByte()
+			if err != nil {
+				return 0, err
+			}
+			// '[' is CSI; 'O' is SS3, which some terminals send in
+			// application cursor mode
+			if b2 != '[' && b2 != 'O' {
+				continue
+			}
 			b3, _ := in.ReadByte()
 			switch b3 {
 			case 'A':
