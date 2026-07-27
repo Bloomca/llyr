@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-func run(link string) {
+func prepareRepo(link string) string {
 	pr, err := parsePullRequestLink(link)
 
 	if err != nil {
@@ -28,6 +28,8 @@ func run(link string) {
 
 	repoDir := clone(pr)
 	checkout(repoDir, pr.number)
+
+	return repoDir
 }
 
 type pullRequest struct {

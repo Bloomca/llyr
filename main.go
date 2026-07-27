@@ -4,10 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func main() {
@@ -19,19 +17,7 @@ func main() {
 
 	pr := os.Args[1]
 
-	if !validateURL(pr) {
-		fmt.Println("You need to provide a valid GH pull request link")
-		os.Exit(1)
-	}
-}
-
-func validateURL(link string) bool {
-	u, err := url.Parse(strings.TrimSpace(link))
-
-	if err != nil {
-		return false
-	}
-
+	prepareRepo(pr)
 }
 
 func checkConfiguration() config {
