@@ -44,7 +44,7 @@ func splitArguments(line string) ([]string, error) {
 			case c == '"':
 				open, state = true, inDouble
 			case c == '\\':
-				if i+1 > len(rs) {
+				if i+1 >= len(rs) {
 					return nil, errors.New("trailing backslash")
 				}
 				i++
