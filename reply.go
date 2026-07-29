@@ -23,27 +23,30 @@ const (
 	replyPreviewCharacters = 100
 )
 
+type githubUser struct {
+	Login string `json:"login"`
+}
+
 type githubPullRequestReview struct {
-	ID          int64     `json:"id"`
-	Body        string    `json:"body"`
-	State       string    `json:"state"`
-	SubmittedAt time.Time `json:"submitted_at"`
+	ID          int64      `json:"id"`
+	Body        string     `json:"body"`
+	State       string     `json:"state"`
+	SubmittedAt time.Time  `json:"submitted_at"`
+	User        githubUser `json:"user"`
 }
 
 type githubReviewComment struct {
-	ID                  int64     `json:"id"`
-	PullRequestReviewID int64     `json:"pull_request_review_id"`
-	InReplyToID         *int64    `json:"in_reply_to_id"`
-	Body                string    `json:"body"`
-	Path                string    `json:"path"`
-	Line                int       `json:"line"`
-	OriginalLine        int       `json:"original_line"`
-	Side                string    `json:"side"`
-	DiffHunk            string    `json:"diff_hunk"`
-	CreatedAt           time.Time `json:"created_at"`
-	User                struct {
-		Login string `json:"login"`
-	} `json:"user"`
+	ID                  int64      `json:"id"`
+	PullRequestReviewID int64      `json:"pull_request_review_id"`
+	InReplyToID         *int64     `json:"in_reply_to_id"`
+	Body                string     `json:"body"`
+	Path                string     `json:"path"`
+	Line                int        `json:"line"`
+	OriginalLine        int        `json:"original_line"`
+	Side                string     `json:"side"`
+	DiffHunk            string     `json:"diff_hunk"`
+	CreatedAt           time.Time  `json:"created_at"`
+	User                githubUser `json:"user"`
 }
 
 type pendingReviewThread struct {
@@ -60,13 +63,19 @@ func reply(link string) {
 	}
 
 	printAction("Checking %s#%d for unanswered review comments", pr.slug(), pr.number)
+	llyrLogin, err := fetchAuthenticatedGitHubLogin()
+	if err != nil {
+		fmt.Println("Could not identify authenticated GitHub user: ", err)
+		os.Exit(1)
+	}
+
 	reviews, err := fetchPullRequestReviews(pr)
 	if err != nil {
 		fmt.Println("Could not read pull request reviews: ", err)
 		os.Exit(1)
 	}
 
-	latestReview, found := latestLlyrReview(reviews)
+	latestReview, found := latestLlyrReview(reviews, llyrLogin)
 	if !found {
 		fmt.Println(nothingToReplyMessage)
 		return
@@ -78,7 +87,7 @@ func reply(link string) {
 		os.Exit(1)
 	}
 
-	feedback := llyrFeedbackComments(latestReview.ID, comments)
+	feedback := llyrFeedbackComments(latestReview.ID, comments, llyrLogin)
 	if len(feedback) == 0 {
 		fmt.Println(nothingToReplyMessage)
 		return
@@ -90,7 +99,7 @@ func reply(link string) {
 		os.Exit(1)
 	}
 
-	threads, err := pendingReviewThreads(feedback, comments, resolutions)
+	threads, err := pendingReviewThreads(feedback, comments, resolutions, llyrLogin)
 	if err != nil {
 		fmt.Println("Could not inspect pull request review threads: ", err)
 		os.Exit(1)
@@ -102,7 +111,7 @@ func reply(link string) {
 
 	prompts := make([]string, len(threads))
 	for i, thread := range threads {
-		prompts[i] = constructReplyPrompt(thread)
+		prompts[i] = constructReplyPrompt(thread, llyrLogin)
 		if replyPromptTooLarge(prompts[i]) {
 			printReplyTooLargeWarning(thread)
 			os.Exit(1)
@@ -130,6 +139,7 @@ func reply(link string) {
 			pr,
 			latestReview.ID,
 			thread.Feedback.ID,
+			llyrLogin,
 		)
 		if err != nil {
 			fmt.Println("Could not revalidate review conversation: ", err)
@@ -138,7 +148,7 @@ func reply(link string) {
 
 		// Only post if the agent answered the exact conversation that is still
 		// pending. This also catches resolution and another Llŷr process replying.
-		if !found || !replyConversationMatchesPrompt(currentThread, prompts[i]) {
+		if !found || !replyConversationMatchesPrompt(currentThread, prompts[i], llyrLogin) {
 			printReviewConversationChangedWarning(thread)
 			continue
 		}
@@ -158,6 +168,24 @@ func reply(link string) {
 	printAction("Review replies posted successfully: %d", postedReplies)
 }
 
+func fetchAuthenticatedGitHubLogin() (string, error) {
+	output, err := ghCapture("", "api", "user")
+	if err != nil {
+		return "", err
+	}
+
+	var user githubUser
+	if err := json.Unmarshal([]byte(output), &user); err != nil {
+		return "", fmt.Errorf("decode authenticated GitHub user: %w", err)
+	}
+
+	login := strings.TrimSpace(user.Login)
+	if login == "" {
+		return "", errors.New("authenticated GitHub user has no login")
+	}
+	return login, nil
+}
+
 func fetchPullRequestReviews(pr pullRequest) ([]githubPullRequestReview, error) {
 	endpoint := fmt.Sprintf("repos/%s/pulls/%d/reviews", pr.slug(), pr.number)
 	return fetchGitHubList[githubPullRequestReview](endpoint)
@@ -172,6 +200,7 @@ func refetchPendingReviewThread(
 	pr pullRequest,
 	reviewID int64,
 	feedbackID int64,
+	llyrLogin string,
 ) (pendingReviewThread, bool, error) {
 	comments, err := fetchPullRequestReviewComments(pr)
 	if err != nil {
@@ -188,6 +217,7 @@ func refetchPendingReviewThread(
 		feedbackID,
 		comments,
 		resolutions,
+		llyrLogin,
 	)
 }
 
@@ -219,12 +249,16 @@ func fetchGitHubList[T any](endpoint string) ([]T, error) {
 	}
 }
 
-func latestLlyrReview(reviews []githubPullRequestReview) (githubPullRequestReview, bool) {
+func latestLlyrReview(
+	reviews []githubPullRequestReview,
+	llyrLogin string,
+) (githubPullRequestReview, bool) {
 	var latest githubPullRequestReview
 	found := false
 
 	for _, review := range reviews {
-		if strings.EqualFold(review.State, "PENDING") || !isLlyrComment(review.Body) {
+		if strings.EqualFold(review.State, "PENDING") ||
+			!isLlyrComment(review.Body, review.User.Login, llyrLogin) {
 			continue
 		}
 
@@ -238,7 +272,11 @@ func latestLlyrReview(reviews []githubPullRequestReview) (githubPullRequestRevie
 	return latest, found
 }
 
-func isLlyrComment(body string) bool {
+func isLlyrComment(body, authorLogin, llyrLogin string) bool {
+	if llyrLogin == "" || !strings.EqualFold(authorLogin, llyrLogin) {
+		return false
+	}
+
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	return strings.HasPrefix(body, commentPrefix)
 }
@@ -249,12 +287,16 @@ func stripLlyrPrefix(body string) string {
 	return strings.TrimSpace(body)
 }
 
-func llyrFeedbackComments(reviewID int64, comments []githubReviewComment) []githubReviewComment {
+func llyrFeedbackComments(
+	reviewID int64,
+	comments []githubReviewComment,
+	llyrLogin string,
+) []githubReviewComment {
 	feedback := make([]githubReviewComment, 0)
 	for _, comment := range comments {
 		if comment.PullRequestReviewID == reviewID &&
 			comment.InReplyToID == nil &&
-			isLlyrComment(comment.Body) {
+			isLlyrComment(comment.Body, comment.User.Login, llyrLogin) {
 			feedback = append(feedback, comment)
 		}
 	}
@@ -270,8 +312,9 @@ func pendingReviewThreadForFeedback(
 	feedbackID int64,
 	comments []githubReviewComment,
 	resolutions map[int64]bool,
+	llyrLogin string,
 ) (pendingReviewThread, bool, error) {
-	for _, feedback := range llyrFeedbackComments(reviewID, comments) {
+	for _, feedback := range llyrFeedbackComments(reviewID, comments, llyrLogin) {
 		if feedback.ID != feedbackID {
 			continue
 		}
@@ -280,6 +323,7 @@ func pendingReviewThreadForFeedback(
 			[]githubReviewComment{feedback},
 			comments,
 			resolutions,
+			llyrLogin,
 		)
 		if err != nil {
 			return pendingReviewThread{}, false, err
@@ -297,6 +341,7 @@ func pendingReviewThreads(
 	feedback []githubReviewComment,
 	comments []githubReviewComment,
 	resolutions map[int64]bool,
+	llyrLogin string,
 ) ([]pendingReviewThread, error) {
 	commentsByID := make(map[int64]githubReviewComment, len(comments))
 	feedbackByID := make(map[int64]githubReviewComment, len(feedback))
@@ -331,7 +376,7 @@ func pendingReviewThreads(
 
 		lastLlyrReply := -1
 		for i, comment := range conversation {
-			if isLlyrComment(comment.Body) {
+			if isLlyrComment(comment.Body, comment.User.Login, llyrLogin) {
 				lastLlyrReply = i
 			}
 		}
@@ -525,7 +570,7 @@ type replyPromptMessage struct {
 	NeedsResponse bool   `json:"needs_response"`
 }
 
-func constructReplyPrompt(thread pendingReviewThread) string {
+func constructReplyPrompt(thread pendingReviewThread, llyrLogin string) string {
 	var context replyPromptContext
 	context.Feedback.Body = stripLlyrPrefix(thread.Feedback.Body)
 	context.Feedback.Path = thread.Feedback.Path
@@ -545,7 +590,7 @@ func constructReplyPrompt(thread pendingReviewThread) string {
 	for _, comment := range thread.Conversation {
 		role := "participant"
 		body := strings.TrimSpace(comment.Body)
-		if isLlyrComment(comment.Body) {
+		if isLlyrComment(comment.Body, comment.User.Login, llyrLogin) {
 			role = "llyr"
 			body = stripLlyrPrefix(comment.Body)
 		}
@@ -583,8 +628,12 @@ func replyPromptTooLarge(prompt string) bool {
 	return len(prompt) > maxReplyPromptBytes
 }
 
-func replyConversationMatchesPrompt(thread pendingReviewThread, prompt string) bool {
-	return constructReplyPrompt(thread) == prompt
+func replyConversationMatchesPrompt(
+	thread pendingReviewThread,
+	prompt string,
+	llyrLogin string,
+) bool {
+	return constructReplyPrompt(thread, llyrLogin) == prompt
 }
 
 func printReplyTooLargeWarning(thread pendingReviewThread) {
