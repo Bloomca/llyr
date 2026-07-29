@@ -387,6 +387,40 @@ func TestReplyConversationMatchesPromptDetectsNewResponse(t *testing.T) {
 	}
 }
 
+func TestPrepareReplyPromptsSkipsOnlyOversizedThreads(t *testing.T) {
+	validFeedback := reviewComment(10, 0, commentPrefix+"valid feedback")
+	validResponse := reviewComment(11, 10, "valid response")
+	validThread := pendingReviewThread{
+		Feedback:     validFeedback,
+		Conversation: []githubReviewComment{validResponse},
+		Pending:      []githubReviewComment{validResponse},
+	}
+
+	oversizedFeedback := reviewComment(20, 0, commentPrefix+"oversized feedback")
+	oversizedResponse := reviewComment(21, 20, strings.Repeat("x", maxReplyPromptBytes))
+	oversizedThread := pendingReviewThread{
+		Feedback:     oversizedFeedback,
+		Conversation: []githubReviewComment{oversizedResponse},
+		Pending:      []githubReviewComment{oversizedResponse},
+	}
+
+	prompts, skipped := prepareReplyPrompts(
+		[]pendingReviewThread{oversizedThread, validThread},
+		testLlyrLogin,
+	)
+
+	if len(prompts) != 1 || prompts[0].Thread.Feedback.ID != validFeedback.ID {
+		t.Fatalf("prompts = %#v, want only the valid thread", prompts)
+	}
+	wantPrompt := constructReplyPrompt(validThread, testLlyrLogin)
+	if prompts[0].Prompt != wantPrompt {
+		t.Fatal("prepared prompt does not match the valid thread")
+	}
+	if len(skipped) != 1 || skipped[0].Feedback.ID != oversizedFeedback.ID {
+		t.Fatalf("skipped = %#v, want only the oversized thread", skipped)
+	}
+}
+
 func TestReplyPromptTooLarge(t *testing.T) {
 	if replyPromptTooLarge(strings.Repeat("a", maxReplyPromptBytes)) {
 		t.Fatal("replyPromptTooLarge() rejected a prompt at the limit")

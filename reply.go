@@ -55,6 +55,11 @@ type pendingReviewThread struct {
 	Pending      []githubReviewComment
 }
 
+type preparedReplyPrompt struct {
+	Thread pendingReviewThread
+	Prompt string
+}
+
 func reply(link string) {
 	pr, err := parsePullRequestLink(link)
 	if err != nil {
@@ -109,27 +114,28 @@ func reply(link string) {
 		return
 	}
 
-	prompts := make([]string, len(threads))
-	for i, thread := range threads {
-		prompts[i] = constructReplyPrompt(thread, llyrLogin)
-		if replyPromptTooLarge(prompts[i]) {
-			printReplyTooLargeWarning(thread)
-			os.Exit(1)
-		}
+	replyPrompts, oversizedThreads := prepareReplyPrompts(threads, llyrLogin)
+	for _, thread := range oversizedThreads {
+		printReplyTooLargeWarning(thread)
+	}
+	if len(replyPrompts) == 0 {
+		fmt.Println("No replies were posted.")
+		return
 	}
 
 	config := checkConfiguration()
 	repoDir, pr := preparePullRequest(pr)
 	postedReplies := 0
 
-	for i, thread := range threads {
+	for i, replyPrompt := range replyPrompts {
+		thread := replyPrompt.Thread
 		printAction(
 			"Running reply %d of %d with %s",
 			i+1,
-			len(threads),
+			len(replyPrompts),
 			config.AgentTool,
 		)
-		answer, err := generateReviewReply(config, repoDir, prompts[i])
+		answer, err := generateReviewReply(config, repoDir, replyPrompt.Prompt)
 		if err != nil {
 			fmt.Println("Could not generate review reply: ", err)
 			os.Exit(1)
@@ -148,7 +154,8 @@ func reply(link string) {
 
 		// Only post if the agent answered the exact conversation that is still
 		// pending. This also catches resolution and another Llŷr process replying.
-		if !found || !replyConversationMatchesPrompt(currentThread, prompts[i], llyrLogin) {
+		if !found ||
+			!replyConversationMatchesPrompt(currentThread, replyPrompt.Prompt, llyrLogin) {
 			printReviewConversationChangedWarning(thread)
 			continue
 		}
@@ -624,6 +631,28 @@ return JSON, a fenced block, the Llŷr attribution prefix, or meta-commentary.`,
 	return strings.TrimSpace(prompt)
 }
 
+func prepareReplyPrompts(
+	threads []pendingReviewThread,
+	llyrLogin string,
+) ([]preparedReplyPrompt, []pendingReviewThread) {
+	prompts := make([]preparedReplyPrompt, 0, len(threads))
+	oversized := make([]pendingReviewThread, 0)
+
+	for _, thread := range threads {
+		prompt := constructReplyPrompt(thread, llyrLogin)
+		if replyPromptTooLarge(prompt) {
+			oversized = append(oversized, thread)
+			continue
+		}
+		prompts = append(prompts, preparedReplyPrompt{
+			Thread: thread,
+			Prompt: prompt,
+		})
+	}
+
+	return prompts, oversized
+}
+
 func replyPromptTooLarge(prompt string) bool {
 	return len(prompt) > maxReplyPromptBytes
 }
@@ -639,7 +668,8 @@ func replyConversationMatchesPrompt(
 func printReplyTooLargeWarning(thread pendingReviewThread) {
 	fmt.Println("Warning: conversation is too large to pass safely to the configured agent.")
 	fmt.Printf("Unanswered reply preview: %q\n", pendingReplyPreview(thread))
-	fmt.Println("No replies were posted.")
+	fmt.Println("This review conversation was skipped.")
+	fmt.Println()
 }
 
 func printReviewConversationChangedWarning(thread pendingReviewThread) {
