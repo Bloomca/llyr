@@ -15,10 +15,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	pr := os.Args[1]
+	prLink := os.Args[1]
 
-	repoDir := prepareRepo(pr)
-	review(config, repoDir)
+	repoDir, pr := prepareRepo(prLink)
+	review(config, repoDir, pr)
 }
 
 func checkConfiguration() config {
