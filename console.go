@@ -4,12 +4,81 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/term"
 )
 
+const (
+	ansiReset       = "\x1b[0m"
+	actionColor     = "\x1b[38;5;250m"
+	toolOutputColor = "\x1b[38;5;242m"
+)
+
 var ErrCancelled = errors.New("prompt cancelled")
+
+type colorWriter struct {
+	out     io.Writer
+	color   string
+	enabled bool
+}
+
+func (w colorWriter) Write(p []byte) (int, error) {
+	if !w.enabled || len(p) == 0 {
+		return w.out.Write(p)
+	}
+
+	decorated := make([]byte, 0, len(w.color)+len(p)+len(ansiReset))
+	decorated = append(decorated, w.color...)
+	decorated = append(decorated, p...)
+	decorated = append(decorated, ansiReset...)
+
+	n, err := w.out.Write(decorated)
+	if err == nil && n != len(decorated) {
+		err = io.ErrShortWrite
+	}
+
+	// Report bytes consumed from p rather than bytes used by the ANSI wrapper.
+	written := n - len(w.color)
+	if written < 0 {
+		written = 0
+	}
+	if written > len(p) {
+		written = len(p)
+	}
+
+	return written, err
+}
+
+func printAction(format string, args ...any) {
+	out := colorWriter{
+		out:     os.Stdout,
+		color:   actionColor,
+		enabled: colorEnabled(os.Stdout),
+	}
+	fmt.Fprintf(out, format+"\n", args...)
+}
+
+func toolOutputWriter(out io.Writer) io.Writer {
+	return colorWriter{
+		out:     out,
+		color:   toolOutputColor,
+		enabled: colorEnabled(out),
+	}
+}
+
+func colorEnabled(out io.Writer) bool {
+	if noColor, exists := os.LookupEnv("NO_COLOR"); exists && noColor != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+
+	file, ok := out.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
 
 func selectOption(options []string) (int, error) {
 	fd := int(os.Stdin.Fd())
