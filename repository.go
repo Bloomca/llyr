@@ -21,6 +21,10 @@ func prepareRepo(link string) (string, pullRequest) {
 		os.Exit(1)
 	}
 
+	return preparePullRequest(pr)
+}
+
+func preparePullRequest(pr pullRequest) (string, pullRequest) {
 	printAction("Fetching pull request details for %s#%d", pr.slug(), pr.number)
 	metadata, err := fetchPullRequestMetadata(pr)
 	if err != nil {
