@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type config struct {
@@ -28,11 +31,12 @@ func (c config) save() error {
 }
 
 func createConfig() (config, error) {
-	config := config{Version: 1, AgentTool: ""}
-	config.setTool()
-	err := config.save()
+	cfg := config{Version: 1}
+	if err := cfg.setTool(); err != nil {
+		return cfg, err
+	}
 
-	return config, err
+	return cfg, cfg.save()
 }
 
 func parseConfig(fileName string) (config, error) {
@@ -50,44 +54,64 @@ func parseConfig(fileName string) (config, error) {
 	return cfg, nil
 }
 
-func (c *config) setTool() {
-	// check for 3 agents, but the user can have other agents, so
+func (c *config) setTool() error {
+	// Check for 3 agents, but the user can have other agents, so
 	// it is possible to set up a different CLI option.
-	claudeExists := binaryExists("claude")
-	codexExists := binaryExists("codex")
-	piExists := binaryExists("pi")
-
 	options := []string{}
 
-	if claudeExists {
+	if binaryExists("claude") {
 		options = append(options, "claude")
 	}
 
-	if codexExists {
+	if binaryExists("codex") {
 		options = append(options, "codex")
 	}
 
-	if piExists {
+	if binaryExists("pi") {
 		options = append(options, "pi")
 	}
 
 	options = append(options, "Write a CLI app manually")
 
 	option, err := selectOption(options)
-
 	if err != nil {
-		fmt.Println("Could not select anything", err)
-		os.Exit(1)
+		return fmt.Errorf("select a tool: %w", err)
 	}
 
-	// last choice is always select your own
+	// The last choice is always select your own.
 	if option == len(options)-1 {
-		// Wait for the line input
+		tool, err := readAgentTool(os.Stdin, os.Stdout)
+		if err != nil {
+			return err
+		}
+		c.AgentTool = tool
 	} else {
 		c.AgentTool = getToolOptions(options[option])
 	}
 
-	c.save()
+	return nil
+}
+
+func readAgentTool(in io.Reader, out io.Writer) (string, error) {
+	fmt.Fprint(out, "Enter the CLI command and any arguments: ")
+
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("read CLI command: %w", err)
+	}
+
+	line = strings.TrimSuffix(line, "\n")
+	line = strings.TrimSuffix(line, "\r")
+	args, err := splitArguments(line)
+	if err != nil {
+		return "", fmt.Errorf("invalid CLI command: %w", err)
+	}
+
+	if _, err := exec.LookPath(args[0]); err != nil {
+		return "", fmt.Errorf("look up CLI tool %q: %w", args[0], err)
+	}
+
+	return line, nil
 }
 
 func getToolOptions(tool string) string {
