@@ -25,7 +25,7 @@ func prepareRepo(link string) (string, pullRequest) {
 }
 
 func preparePullRequest(pr pullRequest) (string, pullRequest) {
-	printAction("Fetching pull request details for %s#%d", pr.slug(), pr.number)
+	printAction("Fetching pull request details…")
 	metadata, err := fetchPullRequestMetadata(pr)
 	if err != nil {
 		fmt.Println("Could not read pull request metadata: ", err)
@@ -56,6 +56,10 @@ type pullRequest struct {
 }
 
 func (pr pullRequest) slug() string { return pr.owner + "/" + pr.repo }
+
+func (pr pullRequest) webURL() string {
+	return fmt.Sprintf("https://github.com/%s/pull/%d", pr.slug(), pr.number)
+}
 
 var ErrNotAPullRequestURL = errors.New("not a pull request URL")
 

@@ -42,8 +42,11 @@ type GitHubReview struct {
 	Comments []InlineComment `json:"comments,omitempty"`
 }
 
-const commentMarker = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_"
-const commentPrefix = commentMarker + "\n\n"
+const (
+	commentMarker   = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_"
+	commentPrefix   = commentMarker + "\n\n"
+	issueTrackerURL = "https://github.com/Bloomca/llyr/issues"
+)
 
 func review(c config, dir string, pr pullRequest) {
 	printAction("Preparing pull request diff against %s", pr.baseRefName)
@@ -84,7 +87,7 @@ func review(c config, dir string, pr pullRequest) {
 		c.AgentTool,
 		constructPrompt(pr.baseRefName, pr.baseCommitID, commitID),
 	)
-	printAction("Running review with %s", c.AgentTool)
+	printAction("Running review with: %s", c.AgentTool)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.Discard
@@ -104,13 +107,18 @@ func review(c config, dir string, pr pullRequest) {
 
 	parsedReview, err := parseReviewOutput(output)
 	if err != nil {
-		fmt.Printf("Failed to parse the output as review JSON: %v\n%s\n", err, output)
+		fmt.Fprintf(os.Stderr, "Failed to parse the output as review JSON: %s\n\n", err)
+		fmt.Fprintf(os.Stderr, "Please open an issue at %s and include the error above.\n", issueTrackerURL)
 		os.Exit(1)
 	}
 
-	printAction("Posting review to %s#%d", pr.slug(), pr.number)
-	postReview(dir, pr, commitID, parsedReview, diff)
-	printAction("Review posted successfully")
+	printAction("Posting review…")
+	reviewURL, err := postReview(dir, pr, commitID, parsedReview, diff)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not post review: %v\n", err)
+		os.Exit(1)
+	}
+	printAction("Review posted successfully at %s", reviewURL)
 }
 
 // Capture commit before doing a review so that the GH review is
@@ -226,37 +234,52 @@ Do not wrap it in a Markdown code fence or include any other text.
 	return strings.TrimSpace(prompt)
 }
 
-func postReview(dir string, pr pullRequest, commitID string, review Review, diff pullRequestDiff) {
+func postReview(
+	dir string,
+	pr pullRequest,
+	commitID string,
+	review Review,
+	diff pullRequestDiff,
+) (string, error) {
 	ghReview := createGitHubReviewStruct(review, commitID, diff)
 
 	data, err := json.Marshal(ghReview)
 	if err != nil {
-		fmt.Printf("Could not encode GitHub review: %v\n", err)
-		os.Exit(1)
+		return "", fmt.Errorf("encode GitHub review: %w", err)
 	}
 
 	endpoint := fmt.Sprintf("repos/%s/pulls/%d/reviews", pr.slug(), pr.number)
-	ghStdin(
+	reviewURL, err := ghStdin(
 		dir,
 		bytes.NewReader(data),
 		"api",
 		endpoint,
 		"--method", "POST",
 		"--input", "-",
+		"--jq", ".html_url",
 	)
+	if err != nil {
+		return "", err
+	}
+	if reviewURL == "" {
+		reviewURL = pr.webURL()
+	}
+
+	return reviewURL, nil
 }
 
-func ghStdin(dir string, stdin io.Reader, args ...string) {
+func ghStdin(dir string, stdin io.Reader, args ...string) (string, error) {
 	cmd := newGitHubCLI(dir, args)
 	cmd.Stdin = stdin
 
-	cmd.Stdout = io.Discard
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = toolOutputWriter(os.Stderr)
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("gh %s: %v", strings.Join(args, " "), err)
-		os.Exit(1)
+		return "", fmt.Errorf("gh %s: %w", strings.Join(args, " "), err)
 	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func createGitHubReviewStruct(review Review, commitID string, diff pullRequestDiff) GitHubReview {
