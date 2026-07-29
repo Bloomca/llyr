@@ -20,6 +20,31 @@ func TestGitHubReviewIncludesCommitID(t *testing.T) {
 	}
 }
 
+func TestGitHubReviewPrefixesEveryComment(t *testing.T) {
+	const wantPrefix = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_\n\n"
+
+	diff := newPullRequestDiff()
+	diff.aliases["example.go"] = "example.go"
+	diff.add("example.go", diffSideRight, 11)
+
+	got := createGitHubReviewStruct(Review{
+		Overview: "Summary",
+		Feedback: []Feedback{
+			{Level: "p2", File: "example.go", Line: 11, Side: "RIGHT", Text: "suggestion"},
+		},
+	}, "commit", diff)
+
+	if got.Body != wantPrefix+"Summary" {
+		t.Errorf("review body = %q, want %q", got.Body, wantPrefix+"Summary")
+	}
+	if len(got.Comments) != 1 {
+		t.Fatalf("len(Comments) = %d, want 1", len(got.Comments))
+	}
+	if got.Comments[0].Body != wantPrefix+"**P2**: suggestion" {
+		t.Errorf("inline comment body = %q, want %q", got.Comments[0].Body, wantPrefix+"**P2**: suggestion")
+	}
+}
+
 func TestGitHubReviewValidatesInlineFeedback(t *testing.T) {
 	diff := newPullRequestDiff()
 	diff.aliases["example.go"] = "example.go"

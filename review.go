@@ -42,6 +42,8 @@ type GitHubReview struct {
 	Comments []InlineComment `json:"comments,omitempty"`
 }
 
+const commentPrefix = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_\n\n"
+
 func review(c config, dir string, pr pullRequest) {
 	printAction("Preparing pull request diff against %s", pr.baseRefName)
 	commitID, err := captureHeadCommit(dir)
@@ -233,7 +235,7 @@ func createGitHubReviewStruct(review Review, commitID string, diff pullRequestDi
 			Path: path,
 			Line: feedback.Line,
 			Side: side,
-			Body: fmt.Sprintf(
+			Body: commentPrefix + fmt.Sprintf(
 				"**%s**: %s",
 				strings.ToUpper(level),
 				text,
@@ -242,7 +244,7 @@ func createGitHubReviewStruct(review Review, commitID string, diff pullRequestDi
 	}
 
 	return GitHubReview{
-		Body:     appendUnmappedFeedback(overview, unmapped),
+		Body:     commentPrefix + appendUnmappedFeedback(overview, unmapped),
 		Event:    "COMMENT",
 		CommitID: commitID,
 		Comments: comments,
