@@ -9,6 +9,11 @@ import (
 )
 
 func main() {
+	if err := requireGitHubCLI(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "config":
