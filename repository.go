@@ -218,6 +218,28 @@ func checkout(repoDir string, prNumber int) {
 	}
 }
 
+func requireGitHubCLI() error {
+	path, err := exec.LookPath("gh")
+	if err != nil {
+		return errors.New("GitHub CLI (`gh`) was not found in PATH; install it from https://cli.github.com/")
+	}
+
+	cmd := exec.Command(path, "auth", "status", "--active", "--hostname", "github.com")
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Run(); err != nil {
+		message := "GitHub CLI (`gh`) is not authenticated for github.com; run `gh auth login --hostname github.com` and try again"
+		if details := strings.TrimSpace(output.String()); details != "" {
+			message += ":\n" + details
+		}
+		return errors.New(message)
+	}
+
+	return nil
+}
+
 func newGitHubCLI(dir string, args []string) *exec.Cmd {
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = dir

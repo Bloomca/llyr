@@ -9,33 +9,37 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "config":
-			configure()
-			return
-		case "reply":
-			if len(os.Args) != 3 {
-				fmt.Println("Usage: llyr reply <pull-request-url>")
-				os.Exit(1)
-			}
-			reply(os.Args[2])
-			return
-		case "help", "--help", "-h":
-			printHelp()
-			return
-		}
-	}
-
-	config := checkConfiguration()
-
 	if len(os.Args) == 1 {
+		checkConfiguration()
 		return
 	}
 
-	prLink := os.Args[1]
+	switch os.Args[1] {
+	case "config":
+		configure()
+		return
+	case "reply":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: llyr reply <pull-request-url>")
+			os.Exit(1)
+		}
+	case "help", "--help", "-h":
+		printHelp()
+		return
+	}
 
-	repoDir, pr := prepareRepo(prLink)
+	if err := requireGitHubCLI(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	if os.Args[1] == "reply" {
+		reply(os.Args[2])
+		return
+	}
+
+	config := checkConfiguration()
+	repoDir, pr := prepareRepo(os.Args[1])
 	review(config, repoDir, pr)
 }
 
