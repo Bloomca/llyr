@@ -101,9 +101,9 @@ func review(c config, dir string, pr pullRequest) {
 	// parse response and post to GH as a review
 	output := strings.TrimSpace(stdout.String())
 
-	parsedReview := Review{}
-	if err := json.Unmarshal([]byte(output), &parsedReview); err != nil {
-		fmt.Printf("Failed to parse the output:\n%s", output)
+	parsedReview, err := parseReviewOutput(output)
+	if err != nil {
+		fmt.Printf("Failed to parse the output as review JSON: %v\n%s\n", err, output)
 		os.Exit(1)
 	}
 
@@ -134,6 +134,31 @@ func captureHeadCommit(dir string) (string, error) {
 	return commitID, nil
 }
 
+func parseReviewOutput(output string) (Review, error) {
+	output = strings.TrimSpace(output)
+	if unfenced, ok := unwrapJSONCodeFence(output); ok {
+		output = unfenced
+	}
+
+	var review Review
+	if err := json.Unmarshal([]byte(output), &review); err != nil {
+		return Review{}, fmt.Errorf("decode review JSON: %w", err)
+	}
+	return review, nil
+}
+
+func unwrapJSONCodeFence(output string) (string, bool) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 3 || !strings.EqualFold(strings.TrimSpace(lines[0]), "```json") {
+		return "", false
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) != "```" {
+		return "", false
+	}
+
+	return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n")), true
+}
+
 func constructPrompt(baseRefName, baseCommitID, headCommitID string) string {
 	prompt := fmt.Sprintf(`
 Check this PR and compare it with its target branch %q.
@@ -143,7 +168,7 @@ Use this exact commit range rather than guessing the target branch.
 
 Read the README.md file (if any), documentation and check the source code.
 Once you have a good understanding of the project, go ahead and review the changes.
-Return only valid JSON with this schema:
+Return a valid JSON object with this schema:
 {
   "overview": "string",
   "feedback": [
@@ -162,6 +187,9 @@ and the new-file line number for additions or context lines. Use LEFT and the
 old-file line number for deletions. Do not use unchanged lines outside a diff
 hunk. Put feedback without a valid diff location in the overview instead of
 inventing a location.
+
+Your entire response must be raw JSON, beginning with { and ending with }.
+Do not wrap it in a Markdown code fence or include any other text.
 `, baseRefName, baseCommitID, headCommitID)
 
 	return strings.TrimSpace(prompt)

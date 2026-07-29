@@ -72,6 +72,56 @@ func TestGitHubReviewValidatesInlineFeedback(t *testing.T) {
 	}
 }
 
+func TestParseReviewOutputAcceptsRawAndFencedJSON(t *testing.T) {
+	const output = `{
+  "overview": "Summary"
+  ,
+  "feedback": [
+    {
+      "level": "p2",
+      "file": "example.go",
+      "line": 42,
+      "side": "RIGHT",
+      "text": "Suggestion"
+    }
+  ]
+}`
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "raw", input: output},
+		{name: "fenced", input: "```json\n" + output + "\n```"},
+		{
+			name:  "uppercase fence with CRLF",
+			input: strings.ReplaceAll("```JSON\n"+output+"\n```", "\n", "\r\n"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			review, err := parseReviewOutput(tt.input)
+			if err != nil {
+				t.Fatalf("parseReviewOutput() error = %v", err)
+			}
+			if review.Overview != "Summary" {
+				t.Errorf("Overview = %q, want Summary", review.Overview)
+			}
+			if len(review.Feedback) != 1 || review.Feedback[0].Text != "Suggestion" {
+				t.Errorf("Feedback = %#v", review.Feedback)
+			}
+		})
+	}
+}
+
+func TestParseReviewOutputRejectsTextOutsideFence(t *testing.T) {
+	_, err := parseReviewOutput("Review:\n```json\n{\"overview\":\"Summary\"}\n```")
+	if err == nil {
+		t.Fatal("parseReviewOutput() accepted text outside the JSON fence")
+	}
+}
+
 func TestReviewPromptRequestsDiffSide(t *testing.T) {
 	prompt := constructPrompt("release", "base-commit", "head-commit")
 	for _, expected := range []string{
@@ -80,6 +130,8 @@ func TestReviewPromptRequestsDiffSide(t *testing.T) {
 		"Use LEFT",
 		"target branch \"release\"",
 		"base-commit...head-commit",
+		"entire response must be raw JSON",
+		"Do not wrap it in a Markdown code fence",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Errorf("prompt does not contain %q", expected)
