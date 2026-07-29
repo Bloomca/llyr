@@ -9,10 +9,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		configure()
+		return
+	}
+
 	config := checkConfiguration()
 
 	if len(os.Args) == 1 {
-		os.Exit(0)
+		return
 	}
 
 	prLink := os.Args[1]
@@ -21,7 +26,29 @@ func main() {
 	review(config, repoDir, pr)
 }
 
+func configure() {
+	cfg, created := loadOrCreateConfiguration()
+	if created {
+		return
+	}
+
+	fmt.Printf("Current agent tool: %s\n\n", cfg.AgentTool)
+	if err := cfg.setTool(); err != nil {
+		fmt.Println("Could not update config:", err)
+		os.Exit(1)
+	}
+	if err := cfg.save(); err != nil {
+		fmt.Println("Could not update config:", err)
+		os.Exit(1)
+	}
+}
+
 func checkConfiguration() config {
+	cfg, _ := loadOrCreateConfiguration()
+	return cfg
+}
+
+func loadOrCreateConfiguration() (config, bool) {
 	homeDir, err := os.UserHomeDir()
 
 	if err != nil {
@@ -83,17 +110,17 @@ func checkConfiguration() config {
 			os.Exit(1)
 		}
 
-		return config
-	} else {
-		config, err := parseConfig(configFile)
-
-		if err != nil {
-			fmt.Println("Could not parse config file: ", err)
-			os.Exit(1)
-		}
-
-		return config
+		return config, true
 	}
+
+	config, err := parseConfig(configFile)
+
+	if err != nil {
+		fmt.Println("Could not parse config file: ", err)
+		os.Exit(1)
+	}
+
+	return config, false
 }
 
 func directoryExists(dir string) (bool, error) {
