@@ -99,7 +99,7 @@ func executeCommand(dir string, line string, prompt string) *exec.Cmd {
 
 	path, err := exec.LookPath(args[0])
 	if err != nil {
-		fmt.Printf("resolving %q: %w", args[0], err)
+		fmt.Printf("resolving %q: %v", args[0], err)
 	}
 
 	cmd := exec.Command(path, args[1:]...)
