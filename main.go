@@ -18,6 +18,13 @@ func main() {
 	case "config":
 		configure()
 		return
+	case "clean":
+		if len(os.Args) != 2 {
+			fmt.Println("Usage: llyr clean")
+			os.Exit(1)
+		}
+		cleanRepositories()
+		return
 	case "reply":
 		if len(os.Args) != 3 {
 			fmt.Println("Usage: llyr reply <pull-request-url>")
@@ -48,6 +55,7 @@ func printHelp() {
   llyr <pull-request-url>        Review a pull request
   llyr reply <pull-request-url>  Answer replies to the latest Llŷr review
   llyr config                    Change the configured agent command
+  llyr clean                     Remove all cloned repositories
 
 Reply mode exposes pull-request contents and review conversations to the
 configured agent. Both are untrusted input, so only use this mode when you
