@@ -23,8 +23,11 @@ type diffLocation struct {
 }
 
 type pullRequestDiff struct {
-	aliases map[string]string
-	lines   map[diffLocation]struct{}
+	aliases      map[string]string
+	lines        map[diffLocation]struct{}
+	addedLines   int
+	deletedLines int
+	changedFiles int
 }
 
 func newPullRequestDiff() pullRequestDiff {
@@ -116,6 +119,7 @@ func parsePullRequestDiff(reader io.Reader) (pullRequestDiff, error) {
 		line := scanner.Text()
 
 		if strings.HasPrefix(line, "diff --git ") {
+			diff.changedFiles++
 			oldPath, path = "", ""
 			inHunk = false
 			continue
@@ -173,9 +177,11 @@ func parsePullRequestDiff(reader io.Reader) (pullRequestDiff, error) {
 			oldLine++
 			newLine++
 		case '-':
+			diff.deletedLines++
 			diff.add(path, diffSideLeft, oldLine)
 			oldLine++
 		case '+':
+			diff.addedLines++
 			diff.add(path, diffSideRight, newLine)
 			newLine++
 		case '\\':

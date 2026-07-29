@@ -30,6 +30,14 @@ rename to new/name.go
 	if err != nil {
 		t.Fatalf("parsePullRequestDiff() error = %v", err)
 	}
+	if diff.deletedLines != 2 || diff.addedLines != 3 || diff.changedFiles != 1 {
+		t.Fatalf(
+			"diff stats = %d deleted, %d added, %d files; want 2 deleted, 3 added, 1 file",
+			diff.deletedLines,
+			diff.addedLines,
+			diff.changedFiles,
+		)
+	}
 
 	tests := []struct {
 		name     string
@@ -93,6 +101,14 @@ func TestCapturePullRequestDiffUsesExplicitCommits(t *testing.T) {
 	if _, side, ok := diff.resolve("example.go", 1, "RIGHT"); !ok || side != "RIGHT" {
 		t.Fatalf("added line was not captured: side = %q, ok = %v", side, ok)
 	}
+	if diff.deletedLines != 1 || diff.addedLines != 1 || diff.changedFiles != 1 {
+		t.Fatalf(
+			"diff stats = %d deleted, %d added, %d files; want 1 deleted, 1 added, 1 file",
+			diff.deletedLines,
+			diff.addedLines,
+			diff.changedFiles,
+		)
+	}
 }
 
 func TestParsePullRequestDiffHandlesAddedAndDeletedFiles(t *testing.T) {
@@ -117,6 +133,14 @@ diff --git a/added.go b/added.go
 	}
 	if path, side, ok := diff.resolve("added.go", 7, "RIGHT"); !ok || path != "added.go" || side != "RIGHT" {
 		t.Fatalf("added location = (%q, %q, %v)", path, side, ok)
+	}
+	if diff.deletedLines != 1 || diff.addedLines != 1 || diff.changedFiles != 2 {
+		t.Fatalf(
+			"diff stats = %d deleted, %d added, %d files; want 1 deleted, 1 added, 2 files",
+			diff.deletedLines,
+			diff.addedLines,
+			diff.changedFiles,
+		)
 	}
 }
 

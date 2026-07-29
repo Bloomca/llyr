@@ -64,6 +64,18 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
+	fileLabel := "files"
+	if diff.changedFiles == 1 {
+		fileLabel = "file"
+	}
+	printAction(
+		"Diff size: %d LoC deleted, %d LoC added across %d %s",
+		diff.deletedLines,
+		diff.addedLines,
+		diff.changedFiles,
+		fileLabel,
+	)
+
 	cmd := executeCommand(
 		dir,
 		c.AgentTool,
