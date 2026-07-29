@@ -212,7 +212,7 @@ func clone(pr pullRequest) string {
 
 func checkout(repoDir string, prNumber int) {
 	printAction("Checking out pull request #%d", prNumber)
-	if err := ghStream(repoDir, "pr", "checkout", strconv.Itoa(prNumber)); err != nil {
+	if err := ghStream(repoDir, "pr", "checkout", "--force", strconv.Itoa(prNumber)); err != nil {
 		fmt.Printf("Could not checkout the PR %d at the %s", prNumber, repoDir)
 		os.Exit(1)
 	}
