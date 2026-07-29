@@ -43,6 +43,7 @@ type GitHubReview struct {
 }
 
 func review(c config, dir string, pr pullRequest) {
+	printAction("Preparing pull request diff against %s", pr.baseRefName)
 	commitID, err := captureHeadCommit(dir)
 	if err != nil {
 		fmt.Printf("Could not capture the checked-out commit: %v", err)
@@ -68,6 +69,7 @@ func review(c config, dir string, pr pullRequest) {
 		c.AgentTool,
 		constructPrompt(pr.baseRefName, pr.baseCommitID, commitID),
 	)
+	printAction("Running review with %s", c.AgentTool)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
@@ -90,7 +92,9 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
+	printAction("Posting review to %s#%d", pr.slug(), pr.number)
 	postReview(dir, pr, commitID, parsedReview, diff)
+	printAction("Review posted successfully")
 }
 
 // Capture commit before doing a review so that the GH review is

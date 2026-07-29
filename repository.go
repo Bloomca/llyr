@@ -21,6 +21,7 @@ func prepareRepo(link string) (string, pullRequest) {
 		os.Exit(1)
 	}
 
+	printAction("Fetching pull request details for %s#%d", pr.slug(), pr.number)
 	metadata, err := fetchPullRequestMetadata(pr)
 	if err != nil {
 		fmt.Println("Could not read pull request metadata: ", err)
@@ -192,8 +193,10 @@ func clone(pr pullRequest) string {
 	}
 
 	if exists {
+		printAction("Found repository at %s", repoDir)
 		return repoDir
 	} else {
+		printAction("Cloning %s into %s", pr.slug(), repoDir)
 		if err = ghStream("", "repo", "clone", pr.slug(), repoDir); err != nil {
 			fmt.Printf("cloning %s: %v", pr.slug(), err)
 			os.Exit(1)
@@ -204,6 +207,7 @@ func clone(pr pullRequest) string {
 }
 
 func checkout(repoDir string, prNumber int) {
+	printAction("Checking out pull request #%d", prNumber)
 	if err := ghStream(repoDir, "pr", "checkout", strconv.Itoa(prNumber)); err != nil {
 		fmt.Printf("Could not checkout the PR %d at the %s", prNumber, repoDir)
 		os.Exit(1)

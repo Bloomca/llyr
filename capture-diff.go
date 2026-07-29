@@ -76,6 +76,7 @@ func ensureBaseCommitAvailable(dir, baseRefName, baseCommitID string) error {
 		return nil
 	}
 
+	printAction("Fetching base branch %s", baseRefName)
 	cmd := exec.Command("git", "fetch", "--no-tags", "origin", "refs/heads/"+baseRefName)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
