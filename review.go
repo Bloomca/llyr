@@ -43,6 +43,7 @@ type GitHubReview struct {
 }
 
 func review(c config, dir string, pr pullRequest) {
+	printAction("Preparing pull request diff against %s", pr.baseRefName)
 	commitID, err := captureHeadCommit(dir)
 	if err != nil {
 		fmt.Printf("Could not capture the checked-out commit: %v", err)
@@ -63,18 +64,32 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
+	fileLabel := "files"
+	if diff.changedFiles == 1 {
+		fileLabel = "file"
+	}
+	printAction(
+		"Diff size: %d LoC deleted, %d LoC added across %d %s",
+		diff.deletedLines,
+		diff.addedLines,
+		diff.changedFiles,
+		fileLabel,
+	)
+
 	cmd := executeCommand(
 		dir,
 		c.AgentTool,
 		constructPrompt(pr.baseRefName, pr.baseCommitID, commitID),
 	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	printAction("Running review with %s", c.AgentTool)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			fmt.Printf("%s exited %d: %s", c.AgentTool, ee.ExitCode(), stderr.String())
+			fmt.Printf("%s exited %d", c.AgentTool, ee.ExitCode())
 			os.Exit(1)
 		}
 		fmt.Printf("%s failed with error: %s", c.AgentTool, err)
@@ -90,7 +105,9 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
+	printAction("Posting review to %s#%d", pr.slug(), pr.number)
 	postReview(dir, pr, commitID, parsedReview, diff)
+	printAction("Review posted successfully")
 }
 
 // Capture commit before doing a review so that the GH review is
@@ -101,12 +118,10 @@ func captureHeadCommit(dir string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--verify", "HEAD^{commit}")
 	cmd.Dir = dir
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 	if err := cmd.Run(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return "", fmt.Errorf("git rev-parse HEAD: %s", message)
-		}
 		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
 	}
 
@@ -174,15 +189,10 @@ func ghStdin(dir string, stdin io.Reader, args ...string) {
 	cmd := newGitHubCLI(dir, args)
 	cmd.Stdin = stdin
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout = io.Discard
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 
 	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			fmt.Printf("gh %s: %s", strings.Join(args, " "), msg)
-			os.Exit(1)
-		}
-
 		fmt.Printf("gh %s: %v", strings.Join(args, " "), err)
 		os.Exit(1)
 	}

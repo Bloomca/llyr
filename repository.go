@@ -21,6 +21,7 @@ func prepareRepo(link string) (string, pullRequest) {
 		os.Exit(1)
 	}
 
+	printAction("Fetching pull request details for %s#%d", pr.slug(), pr.number)
 	metadata, err := fetchPullRequestMetadata(pr)
 	if err != nil {
 		fmt.Println("Could not read pull request metadata: ", err)
@@ -192,8 +193,10 @@ func clone(pr pullRequest) string {
 	}
 
 	if exists {
+		printAction("Found repository at %s", repoDir)
 		return repoDir
 	} else {
+		printAction("Cloning %s into %s", pr.slug(), repoDir)
 		if err = ghStream("", "repo", "clone", pr.slug(), repoDir); err != nil {
 			fmt.Printf("cloning %s: %v", pr.slug(), err)
 			os.Exit(1)
@@ -204,6 +207,7 @@ func clone(pr pullRequest) string {
 }
 
 func checkout(repoDir string, prNumber int) {
+	printAction("Checking out pull request #%d", prNumber)
 	if err := ghStream(repoDir, "pr", "checkout", strconv.Itoa(prNumber)); err != nil {
 		fmt.Printf("Could not checkout the PR %d at the %s", prNumber, repoDir)
 		os.Exit(1)
@@ -218,13 +222,11 @@ func newGitHubCLI(dir string, args []string) *exec.Cmd {
 
 func ghCapture(dir string, args ...string) (string, error) {
 	cmd := newGitHubCLI(dir, args)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 
 	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", fmt.Errorf("gh %s: %s", strings.Join(args, " "), msg)
-		}
 		return "", fmt.Errorf("gh %s: %w", strings.Join(args, " "), err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
@@ -233,6 +235,7 @@ func ghCapture(dir string, args ...string) (string, error) {
 // stream the output of the GH command
 func ghStream(dir string, args ...string) error {
 	cmd := newGitHubCLI(dir, args)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout = toolOutputWriter(os.Stdout)
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 	return cmd.Run()
 }
