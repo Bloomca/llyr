@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Feedback struct {
@@ -92,6 +93,7 @@ func review(c config, dir string, pr pullRequest) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.Discard
 
+	reviewStartedAt := time.Now()
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -101,6 +103,7 @@ func review(c config, dir string, pr pullRequest) {
 		fmt.Printf("%s failed with error: %s", c.AgentTool, err)
 		os.Exit(1)
 	}
+	reviewDuration := time.Since(reviewStartedAt)
 
 	// parse response and post to GH as a review
 	output := strings.TrimSpace(stdout.String())
@@ -112,7 +115,7 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
-	printAction("Posting review…")
+	printAction("Reviewed in %.0fs. Posting review…", reviewDuration.Seconds())
 	reviewURL, err := postReview(dir, pr, commitID, parsedReview, diff)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not post review: %v\n", err)
