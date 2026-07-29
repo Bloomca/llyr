@@ -12,7 +12,8 @@ import (
 
 const (
 	ansiReset       = "\x1b[0m"
-	actionColor     = "\x1b[38;5;250m"
+	ansiItalic      = "\x1b[3m"
+	actionColor     = "\x1b[38;5;110m"
 	toolOutputColor = "\x1b[38;5;242m"
 )
 
@@ -52,12 +53,18 @@ func (w colorWriter) Write(p []byte) (int, error) {
 }
 
 func printAction(format string, args ...any) {
-	out := colorWriter{
-		out:     os.Stdout,
-		color:   actionColor,
-		enabled: colorEnabled(os.Stdout),
+	printActionTo(os.Stdout, colorEnabled(os.Stdout), format, args...)
+}
+
+func printActionTo(out io.Writer, styled bool, format string, args ...any) {
+	actionOut := colorWriter{
+		out:     out,
+		color:   ansiItalic + actionColor,
+		enabled: styled,
 	}
-	fmt.Fprintf(out, format+"\n", args...)
+	fmt.Fprintf(actionOut, format+"\n", args...)
+
+	fmt.Fprintln(out)
 }
 
 func toolOutputWriter(out io.Writer) io.Writer {

@@ -29,6 +29,26 @@ func TestColorWriterWrapsOutput(t *testing.T) {
 	}
 }
 
+func TestPrintActionToStylesAndSpacesOutput(t *testing.T) {
+	var output bytes.Buffer
+	printActionTo(&output, true, "Reviewing %s", "owner/repo#1")
+
+	want := ansiItalic + actionColor + "Reviewing owner/repo#1\n" + ansiReset + "\n"
+	if output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestPrintActionToLeavesPlainOutputSpaced(t *testing.T) {
+	var output bytes.Buffer
+	printActionTo(&output, false, "Preparing diff")
+
+	const want = "Preparing diff\n\n"
+	if output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
 func TestToolOutputWriterLeavesNonTerminalOutputPlain(t *testing.T) {
 	var output bytes.Buffer
 	if _, err := fmt.Fprint(toolOutputWriter(&output), "tool output\n"); err != nil {
