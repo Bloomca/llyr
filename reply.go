@@ -14,7 +14,14 @@ import (
 	"time"
 )
 
-const nothingToReplyMessage = "There is nothing to reply to"
+const (
+	nothingToReplyMessage = "There is nothing to reply to"
+
+	// Linux commonly limits an individual exec argument to 128 KiB. Keep the
+	// prompt comfortably below that limit for the configured agent command.
+	maxReplyPromptBytes    = 100 * 1024
+	replyPreviewCharacters = 100
+)
 
 type githubPullRequestReview struct {
 	ID          int64     `json:"id"`
@@ -91,6 +98,13 @@ func reply(link string) {
 	if len(threads) == 0 {
 		fmt.Println(nothingToReplyMessage)
 		return
+	}
+
+	for _, thread := range threads {
+		if replyPromptTooLarge(constructReplyPrompt(thread)) {
+			printReplyTooLargeWarning(thread)
+			os.Exit(1)
+		}
 	}
 
 	config := checkConfiguration()
@@ -487,6 +501,33 @@ Return only the response body suitable for posting as GitHub Markdown. Do not
 return JSON, a fenced block, the Llŷr attribution prefix, or meta-commentary.`, contextJSON)
 
 	return strings.TrimSpace(prompt)
+}
+
+func replyPromptTooLarge(prompt string) bool {
+	return len(prompt) > maxReplyPromptBytes
+}
+
+func printReplyTooLargeWarning(thread pendingReviewThread) {
+	fmt.Println("Warning: conversation is too large to pass safely to the configured agent.")
+	fmt.Printf("Unanswered reply preview: %q\n", pendingReplyPreview(thread))
+	fmt.Println("No replies were posted.")
+}
+
+func pendingReplyPreview(thread pendingReviewThread) string {
+	parts := make([]string, 0, len(thread.Pending))
+	for _, comment := range thread.Pending {
+		body := strings.Join(strings.Fields(comment.Body), " ")
+		if body != "" {
+			parts = append(parts, body)
+		}
+	}
+
+	preview := strings.Join(parts, " | ")
+	runes := []rune(preview)
+	if len(runes) > replyPreviewCharacters {
+		return string(runes[:replyPreviewCharacters]) + "…"
+	}
+	return preview
 }
 
 func generateReviewReply(

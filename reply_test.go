@@ -179,6 +179,38 @@ func TestConstructReplyPromptMarksConversationAsData(t *testing.T) {
 	}
 }
 
+func TestReplyPromptTooLarge(t *testing.T) {
+	if replyPromptTooLarge(strings.Repeat("a", maxReplyPromptBytes)) {
+		t.Fatal("replyPromptTooLarge() rejected a prompt at the limit")
+	}
+	if !replyPromptTooLarge(strings.Repeat("a", maxReplyPromptBytes+1)) {
+		t.Fatal("replyPromptTooLarge() accepted a prompt over the limit")
+	}
+}
+
+func TestPendingReplyPreviewIsUnicodeSafeAndCollapsesWhitespace(t *testing.T) {
+	body := "  " + strings.Repeat("界", replyPreviewCharacters+5) + "\nmore text"
+	pending := reviewComment(11, 10, body)
+
+	got := pendingReplyPreview(pendingReviewThread{Pending: []githubReviewComment{pending}})
+	want := strings.Repeat("界", replyPreviewCharacters) + "…"
+	if got != want {
+		t.Fatalf("pendingReplyPreview() = %q, want %q", got, want)
+	}
+}
+
+func TestPendingReplyPreviewCombinesReplies(t *testing.T) {
+	first := reviewComment(11, 10, "first\nreply")
+	second := reviewComment(12, 10, "second reply")
+
+	got := pendingReplyPreview(pendingReviewThread{
+		Pending: []githubReviewComment{first, second},
+	})
+	if got != "first reply | second reply" {
+		t.Fatalf("pendingReplyPreview() = %q", got)
+	}
+}
+
 func TestCreateGitHubReviewReplyAddsPrefix(t *testing.T) {
 	reply := createGitHubReviewReply("  Answer  ")
 	if reply.Body != commentPrefix+"Answer" {
