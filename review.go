@@ -42,7 +42,8 @@ type GitHubReview struct {
 	Comments []InlineComment `json:"comments,omitempty"`
 }
 
-const commentPrefix = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_\n\n"
+const commentMarker = "> _Posted by [Llŷr](https://github.com/Bloomca/llyr)_"
+const commentPrefix = commentMarker + "\n\n"
 
 func review(c config, dir string, pr pullRequest) {
 	printAction("Preparing pull request diff against %s", pr.baseRefName)

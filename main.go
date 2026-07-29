@@ -9,9 +9,22 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "config" {
-		configure()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "config":
+			configure()
+			return
+		case "reply":
+			if len(os.Args) != 3 {
+				fmt.Println("Usage: llyr reply <pull-request-url>")
+				os.Exit(1)
+			}
+			reply(os.Args[2])
+			return
+		case "help", "--help", "-h":
+			printHelp()
+			return
+		}
 	}
 
 	config := checkConfiguration()
@@ -24,6 +37,18 @@ func main() {
 
 	repoDir, pr := prepareRepo(prLink)
 	review(config, repoDir, pr)
+}
+
+func printHelp() {
+	fmt.Print(`Usage:
+  llyr <pull-request-url>        Review a pull request
+  llyr reply <pull-request-url>  Answer replies to the latest Llŷr review
+  llyr config                    Change the configured agent command
+
+Reply mode exposes pull-request contents and review conversations to the
+configured agent. Both are untrusted input, so only use this mode when you
+trust the pull request and its participants.
+`)
 }
 
 func configure() {
