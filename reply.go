@@ -100,8 +100,10 @@ func reply(link string) {
 		return
 	}
 
-	for _, thread := range threads {
-		if replyPromptTooLarge(constructReplyPrompt(thread)) {
+	prompts := make([]string, len(threads))
+	for i, thread := range threads {
+		prompts[i] = constructReplyPrompt(thread)
+		if replyPromptTooLarge(prompts[i]) {
 			printReplyTooLargeWarning(thread)
 			os.Exit(1)
 		}
@@ -109,6 +111,7 @@ func reply(link string) {
 
 	config := checkConfiguration()
 	repoDir, pr := preparePullRequest(pr)
+	postedReplies := 0
 
 	for i, thread := range threads {
 		printAction(
@@ -117,10 +120,27 @@ func reply(link string) {
 			len(threads),
 			config.AgentTool,
 		)
-		answer, err := generateReviewReply(config, repoDir, thread)
+		answer, err := generateReviewReply(config, repoDir, prompts[i])
 		if err != nil {
 			fmt.Println("Could not generate review reply: ", err)
 			os.Exit(1)
+		}
+
+		currentThread, found, err := refetchPendingReviewThread(
+			pr,
+			latestReview.ID,
+			thread.Feedback.ID,
+		)
+		if err != nil {
+			fmt.Println("Could not revalidate review conversation: ", err)
+			os.Exit(1)
+		}
+
+		// Only post if the agent answered the exact conversation that is still
+		// pending. This also catches resolution and another Llŷr process replying.
+		if !found || !replyConversationMatchesPrompt(currentThread, prompts[i]) {
+			printReviewConversationChangedWarning(thread)
+			continue
 		}
 
 		printAction("Posting reply to %s#%d", pr.slug(), pr.number)
@@ -128,9 +148,14 @@ func reply(link string) {
 			fmt.Println("Could not post review reply: ", err)
 			os.Exit(1)
 		}
+		postedReplies++
 	}
 
-	printAction("Review replies posted successfully: %d", len(threads))
+	if postedReplies == 0 {
+		fmt.Println("No replies were posted.")
+		return
+	}
+	printAction("Review replies posted successfully: %d", postedReplies)
 }
 
 func fetchPullRequestReviews(pr pullRequest) ([]githubPullRequestReview, error) {
@@ -141,6 +166,29 @@ func fetchPullRequestReviews(pr pullRequest) ([]githubPullRequestReview, error) 
 func fetchPullRequestReviewComments(pr pullRequest) ([]githubReviewComment, error) {
 	endpoint := fmt.Sprintf("repos/%s/pulls/%d/comments", pr.slug(), pr.number)
 	return fetchGitHubList[githubReviewComment](endpoint)
+}
+
+func refetchPendingReviewThread(
+	pr pullRequest,
+	reviewID int64,
+	feedbackID int64,
+) (pendingReviewThread, bool, error) {
+	comments, err := fetchPullRequestReviewComments(pr)
+	if err != nil {
+		return pendingReviewThread{}, false, err
+	}
+
+	resolutions, err := fetchReviewThreadResolutions(pr)
+	if err != nil {
+		return pendingReviewThread{}, false, err
+	}
+
+	return pendingReviewThreadForFeedback(
+		reviewID,
+		feedbackID,
+		comments,
+		resolutions,
+	)
 }
 
 func fetchGitHubList[T any](endpoint string) ([]T, error) {
@@ -215,6 +263,34 @@ func llyrFeedbackComments(reviewID int64, comments []githubReviewComment) []gith
 		return reviewCommentBefore(feedback[i], feedback[j])
 	})
 	return feedback
+}
+
+func pendingReviewThreadForFeedback(
+	reviewID int64,
+	feedbackID int64,
+	comments []githubReviewComment,
+	resolutions map[int64]bool,
+) (pendingReviewThread, bool, error) {
+	for _, feedback := range llyrFeedbackComments(reviewID, comments) {
+		if feedback.ID != feedbackID {
+			continue
+		}
+
+		threads, err := pendingReviewThreads(
+			[]githubReviewComment{feedback},
+			comments,
+			resolutions,
+		)
+		if err != nil {
+			return pendingReviewThread{}, false, err
+		}
+		if len(threads) == 0 {
+			return pendingReviewThread{}, false, nil
+		}
+		return threads[0], true, nil
+	}
+
+	return pendingReviewThread{}, false, nil
 }
 
 func pendingReviewThreads(
@@ -507,10 +583,21 @@ func replyPromptTooLarge(prompt string) bool {
 	return len(prompt) > maxReplyPromptBytes
 }
 
+func replyConversationMatchesPrompt(thread pendingReviewThread, prompt string) bool {
+	return constructReplyPrompt(thread) == prompt
+}
+
 func printReplyTooLargeWarning(thread pendingReviewThread) {
 	fmt.Println("Warning: conversation is too large to pass safely to the configured agent.")
 	fmt.Printf("Unanswered reply preview: %q\n", pendingReplyPreview(thread))
 	fmt.Println("No replies were posted.")
+}
+
+func printReviewConversationChangedWarning(thread pendingReviewThread) {
+	fmt.Println("Warning: review conversation changed while Llŷr was generating a reply.")
+	fmt.Printf("Unanswered reply preview: %q\n", pendingReplyPreview(thread))
+	fmt.Println("The generated reply was not posted. Run llyr reply again to process the latest conversation.")
+	fmt.Println()
 }
 
 func pendingReplyPreview(thread pendingReviewThread) string {
@@ -530,12 +617,8 @@ func pendingReplyPreview(thread pendingReviewThread) string {
 	return preview
 }
 
-func generateReviewReply(
-	config config,
-	dir string,
-	thread pendingReviewThread,
-) (string, error) {
-	cmd := executeCommand(dir, config.AgentTool, constructReplyPrompt(thread))
+func generateReviewReply(config config, dir string, prompt string) (string, error) {
+	cmd := executeCommand(dir, config.AgentTool, prompt)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = toolOutputWriter(os.Stderr)

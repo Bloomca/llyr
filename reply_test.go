@@ -144,6 +144,71 @@ func TestLlyrFeedbackCommentsBelongToSelectedReview(t *testing.T) {
 	}
 }
 
+func TestPendingReviewThreadForFeedbackFindsOnlyRequestedThread(t *testing.T) {
+	target := reviewComment(10, 0, commentPrefix+"target feedback")
+	target.PullRequestReviewID = 100
+	other := reviewComment(20, 0, commentPrefix+"other feedback")
+	other.PullRequestReviewID = 100
+	response := reviewComment(11, 10, "target response")
+
+	thread, found, err := pendingReviewThreadForFeedback(
+		100,
+		10,
+		[]githubReviewComment{other, response, target},
+		map[int64]bool{10: false, 20: false},
+	)
+	if err != nil {
+		t.Fatalf("pendingReviewThreadForFeedback() error = %v", err)
+	}
+	if !found {
+		t.Fatal("pendingReviewThreadForFeedback() did not find the thread")
+	}
+	if thread.Feedback.ID != 10 || len(thread.Pending) != 1 || thread.Pending[0].ID != 11 {
+		t.Fatalf("thread = %#v, want feedback 10 with pending reply 11", thread)
+	}
+}
+
+func TestPendingReviewThreadForFeedbackSkipsResolvedOrAnsweredThread(t *testing.T) {
+	feedback := reviewComment(10, 0, commentPrefix+"feedback")
+	feedback.PullRequestReviewID = 100
+	response := reviewComment(11, 10, "response")
+	answer := reviewComment(12, 10, commentPrefix+"answer")
+
+	tests := []struct {
+		name        string
+		comments    []githubReviewComment
+		resolutions map[int64]bool
+	}{
+		{
+			name:        "resolved",
+			comments:    []githubReviewComment{feedback, response},
+			resolutions: map[int64]bool{10: true},
+		},
+		{
+			name:        "answered",
+			comments:    []githubReviewComment{feedback, response, answer},
+			resolutions: map[int64]bool{10: false},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, found, err := pendingReviewThreadForFeedback(
+				100,
+				10,
+				tt.comments,
+				tt.resolutions,
+			)
+			if err != nil {
+				t.Fatalf("pendingReviewThreadForFeedback() error = %v", err)
+			}
+			if found {
+				t.Fatal("pendingReviewThreadForFeedback() found a thread, want none")
+			}
+		})
+	}
+}
+
 func TestConstructReplyPromptMarksConversationAsData(t *testing.T) {
 	feedback := reviewComment(10, 0, commentPrefix+"**P2**: original feedback")
 	feedback.Path = "example.go"
@@ -176,6 +241,31 @@ func TestConstructReplyPromptMarksConversationAsData(t *testing.T) {
 	}
 	if strings.Contains(prompt, commentMarker) {
 		t.Errorf("prompt contains the Llŷr attribution marker: %s", prompt)
+	}
+}
+
+func TestReplyConversationMatchesPromptDetectsNewResponse(t *testing.T) {
+	feedback := reviewComment(10, 0, commentPrefix+"feedback")
+	response := reviewComment(11, 10, "response")
+	original := pendingReviewThread{
+		Feedback:     feedback,
+		Conversation: []githubReviewComment{response},
+		Pending:      []githubReviewComment{response},
+	}
+	prompt := constructReplyPrompt(original)
+
+	if !replyConversationMatchesPrompt(original, prompt) {
+		t.Fatal("replyConversationMatchesPrompt() rejected an unchanged conversation")
+	}
+
+	newResponse := reviewComment(12, 10, "new response")
+	changed := pendingReviewThread{
+		Feedback:     feedback,
+		Conversation: []githubReviewComment{response, newResponse},
+		Pending:      []githubReviewComment{response, newResponse},
+	}
+	if replyConversationMatchesPrompt(changed, prompt) {
+		t.Fatal("replyConversationMatchesPrompt() accepted a changed conversation")
 	}
 }
 
