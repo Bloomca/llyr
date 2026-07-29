@@ -42,10 +42,17 @@ type InlineComment struct {
 type GitHubReview struct {
 	Body     string          `json:"body,omitempty"`
 	Event    string          `json:"event"`
+	CommitID string          `json:"commit_id"`
 	Comments []InlineComment `json:"comments,omitempty"`
 }
 
 func review(c config, dir string, pr pullRequest) {
+	commitID, err := captureHeadCommit(dir)
+	if err != nil {
+		fmt.Printf("Could not capture the checked-out commit: %v", err)
+		os.Exit(1)
+	}
+
 	cmd := executeCommand(dir, c.AgentTool, constructPrompt())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -69,7 +76,31 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
-	postReview(dir, pr, parsedReview)
+	postReview(dir, pr, commitID, parsedReview)
+}
+
+// Capture commit before doing a review so that the GH review is
+// specifically pinned against that commit. This is needed in case
+// there were new commits in between and that caused some changes
+// to move in position.
+func captureHeadCommit(dir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--verify", "HEAD^{commit}")
+	cmd.Dir = dir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if message := strings.TrimSpace(stderr.String()); message != "" {
+			return "", fmt.Errorf("git rev-parse HEAD: %s", message)
+		}
+		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+
+	commitID := strings.TrimSpace(stdout.String())
+	if commitID == "" {
+		return "", errors.New("git rev-parse HEAD returned an empty commit")
+	}
+	return commitID, nil
 }
 
 func constructPrompt() string {
@@ -88,8 +119,8 @@ Provide the output in a JSON format with the following schema:
 	return strings.TrimSpace(prompt)
 }
 
-func postReview(dir string, pr pullRequest, review Review) {
-	ghReview := createGitHubReviewStruct(review)
+func postReview(dir string, pr pullRequest, commitID string, review Review) {
+	ghReview := createGitHubReviewStruct(review, commitID)
 
 	data, err := json.Marshal(ghReview)
 	if err != nil {
@@ -126,7 +157,7 @@ func ghStdin(dir string, stdin io.Reader, args ...string) {
 	}
 }
 
-func createGitHubReviewStruct(review Review) GitHubReview {
+func createGitHubReviewStruct(review Review, commitID string) GitHubReview {
 	overview := strings.TrimSpace(review.Overview)
 	if overview == "" {
 		fmt.Println("Review overview cannot be empty")
@@ -165,6 +196,7 @@ func createGitHubReviewStruct(review Review) GitHubReview {
 	return GitHubReview{
 		Body:     overview,
 		Event:    "COMMENT",
+		CommitID: commitID,
 		Comments: comments,
 	}
 }
