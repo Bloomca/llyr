@@ -122,6 +122,35 @@ func TestParseReviewOutputRejectsTextOutsideFence(t *testing.T) {
 	}
 }
 
+func TestReviewPromptRequestsConciseActionableWriting(t *testing.T) {
+	prompt := constructPrompt("release", "base-commit", "head-commit")
+	for _, expected := range []string{
+		`exactly two short sentences and at most 50 words total`,
+		`Summarize what the PR changes at a high level`,
+		`in good shape`,
+		`can be improved`,
+		`strongly recommend addressing the feedback`,
+		`do not repeat inline feedback details`,
+		`Only report concrete, actionable issues`,
+		`Do not report`,
+		`optional polish`,
+		`GitHub-flavored Markdown`,
+		`inline-code formatting`,
+		`focused on one issue, its strongest concrete impact`,
+		`2–3 sentences and roughly`,
+		`50–80 words`,
+		`direct causal explanation`,
+		`Do not catalog every affected caller`,
+		`Aim to stay below 100`,
+		`exceed that only when a shorter explanation`,
+		`finding is correct`,
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Errorf("prompt does not contain %q", expected)
+		}
+	}
+}
+
 func TestReviewPromptRequestsDiffSide(t *testing.T) {
 	prompt := constructPrompt("release", "base-commit", "head-commit")
 	for _, expected := range []string{
@@ -130,6 +159,10 @@ func TestReviewPromptRequestsDiffSide(t *testing.T) {
 		"Use LEFT",
 		"target branch \"release\"",
 		"base-commit...head-commit",
+		"non-interactive, read-only review",
+		"Do not modify repository files",
+		"request additional permissions",
+		"try another read-only approach",
 		"entire response must be raw JSON",
 		"Do not wrap it in a Markdown code fence",
 	} {

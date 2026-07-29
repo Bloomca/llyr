@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+func TestGetToolOptionsUsesSafeNonInteractiveDefaults(t *testing.T) {
+	tests := []struct {
+		tool string
+		want string
+	}{
+		{tool: "claude", want: "claude -p --permission-mode auto"},
+		{tool: "codex", want: "codex -a never -s read-only exec"},
+		{tool: "pi", want: "pi --no-approve --tools read,bash,grep,find,ls -p"},
+		{tool: "custom-agent", want: "custom-agent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			if got := getToolOptions(tt.tool); got != tt.want {
+				t.Fatalf("getToolOptions(%q) = %q, want %q", tt.tool, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReadAgentToolValidatesAndReturnsCommand(t *testing.T) {
 	dir := t.TempDir()
 	toolPath := filepath.Join(dir, "custom-agent")

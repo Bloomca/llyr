@@ -116,15 +116,15 @@ func readAgentTool(in io.Reader, out io.Writer) (string, error) {
 
 func getToolOptions(tool string) string {
 	if tool == "claude" {
-		return "claude -p"
+		return "claude -p --permission-mode auto"
 	}
 
 	if tool == "codex" {
-		return "codex exec"
+		return "codex -a never -s read-only exec"
 	}
 
 	if tool == "pi" {
-		return "pi -p"
+		return "pi --no-approve --tools read,bash,grep,find,ls -p"
 	}
 
 	return tool
