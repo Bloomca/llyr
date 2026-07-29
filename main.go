@@ -11,10 +11,21 @@ import (
 func main() {
 	if len(os.Args) == 1 {
 		checkConfiguration()
+		printShortHelp()
 		return
 	}
 
 	switch os.Args[1] {
+	case "review":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: llyr review <pull-request-url>")
+			os.Exit(1)
+		}
+	case "reply":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: llyr reply <pull-request-url>")
+			os.Exit(1)
+		}
 	case "config":
 		configure()
 		return
@@ -25,14 +36,13 @@ func main() {
 		}
 		cleanRepositories()
 		return
-	case "reply":
-		if len(os.Args) != 3 {
-			fmt.Println("Usage: llyr reply <pull-request-url>")
-			os.Exit(1)
-		}
 	case "help", "--help", "-h":
 		printHelp()
 		return
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command %q\n\n", os.Args[1])
+		printShortHelp()
+		os.Exit(1)
 	}
 
 	if err := requireGitHubCLI(); err != nil {
@@ -46,16 +56,26 @@ func main() {
 	}
 
 	config := checkConfiguration()
-	repoDir, pr := prepareRepo(os.Args[1])
+	repoDir, pr := prepareRepo(os.Args[2])
 	review(config, repoDir, pr)
+}
+
+func printShortHelp() {
+	fmt.Print(`Commands:
+  llyr review <pull-request-url>
+  llyr reply <pull-request-url>
+
+Run 'llyr help' for all commands.
+`)
 }
 
 func printHelp() {
 	fmt.Print(`Usage:
-  llyr <pull-request-url>        Review a pull request
-  llyr reply <pull-request-url>  Answer replies to the latest Llŷr review
-  llyr config                    Change the configured agent command
-  llyr clean                     Remove all cloned repositories
+  llyr review <pull-request-url>  Review a pull request
+  llyr reply <pull-request-url>   Answer replies to the latest Llŷr review
+  llyr config                     Change the configured agent command
+  llyr clean                      Remove all cloned repositories
+  llyr help                       Show command help
 
 Reply mode exposes pull-request contents and review conversations to the
 configured agent. Both are untrusted input, so only use this mode when you
