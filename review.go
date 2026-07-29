@@ -86,7 +86,7 @@ func review(c config, dir string, pr pullRequest) {
 	printAction("Running review with %s", c.AgentTool)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = toolOutputWriter(os.Stderr)
+	cmd.Stderr = io.Discard
 
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
@@ -166,6 +166,10 @@ The authoritative PR diff is:
   git diff --no-ext-diff --find-renames --unified=3 %s...%s --
 Use this exact commit range rather than guessing the target branch.
 
+This is a non-interactive, read-only review. Do not modify repository files or
+request additional permissions. Use only operations available within the
+current sandbox; if an operation is denied, try another read-only approach.
+
 Read the README.md file (if any), documentation and check the source code.
 Once you have a good understanding of the project, go ahead and review the changes.
 Return a valid JSON object with this schema:
@@ -182,11 +186,37 @@ Return a valid JSON object with this schema:
   ]
 }
 
+Keep "overview" to exactly two short sentences and at most 50 words total:
+1. Summarize what the PR changes at a high level.
+2. Give the overall assessment with at most one brief reason.
+Use "in good shape" when there is no actionable feedback, "can be improved"
+when all feedback is p3, and "strongly recommend addressing the feedback" when
+any feedback is p1 or p2. Do not list files, functions, implementation steps,
+or individual tests, and do not repeat inline feedback details in the overview.
+
+Only report concrete, actionable issues that warrant a code change. Use p1 for
+critical correctness or security issues, p2 for significant issues likely to
+occur in realistic use, and p3 for minor but concrete issues. Do not report
+harmless redundancy, stylistic preferences, optional polish, or intentional
+trade-offs without a meaningful negative impact.
+
+Write the overview and feedback text as GitHub-flavored Markdown. Use Markdown
+inline-code formatting for identifiers, commands, file paths, flags, and
+literal values, but do not over-format ordinary prose.
+
+Keep each feedback item focused on one issue, its strongest concrete impact,
+and a suggested fix when useful. Most should be 2–3 sentences and roughly
+50–80 words. Prefer a direct causal explanation over a step-by-step execution
+trace. Do not catalog every affected caller, exploit variant, or consequence
+when one representative example establishes the issue. Aim to stay below 100
+words; exceed that only when a shorter explanation would not establish why the
+finding is correct.
+
 Every feedback location must be a line displayed in a PR diff hunk. Use RIGHT
 and the new-file line number for additions or context lines. Use LEFT and the
 old-file line number for deletions. Do not use unchanged lines outside a diff
-hunk. Put feedback without a valid diff location in the overview instead of
-inventing a location.
+hunk. Mention feedback without a valid diff location only briefly in the second
+overview sentence instead of inventing a location.
 
 Your entire response must be raw JSON, beginning with { and ending with }.
 Do not wrap it in a Markdown code fence or include any other text.
