@@ -222,13 +222,11 @@ func newGitHubCLI(dir string, args []string) *exec.Cmd {
 
 func ghCapture(dir string, args ...string) (string, error) {
 	cmd := newGitHubCLI(dir, args)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 
 	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", fmt.Errorf("gh %s: %s", strings.Join(args, " "), msg)
-		}
 		return "", fmt.Errorf("gh %s: %w", strings.Join(args, " "), err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
@@ -237,6 +235,7 @@ func ghCapture(dir string, args ...string) (string, error) {
 // stream the output of the GH command
 func ghStream(dir string, args ...string) error {
 	cmd := newGitHubCLI(dir, args)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout = toolOutputWriter(os.Stdout)
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 	return cmd.Run()
 }

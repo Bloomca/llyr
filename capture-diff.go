@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -62,12 +63,10 @@ func capturePullRequestDiff(dir, baseRefName, baseCommitID, headCommitID string)
 	)
 	cmd.Dir = dir
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 	if err := cmd.Run(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return pullRequestDiff{}, fmt.Errorf("git diff %s: %s", comparison, message)
-		}
 		return pullRequestDiff{}, fmt.Errorf("git diff %s: %w", comparison, err)
 	}
 
@@ -82,12 +81,9 @@ func ensureBaseCommitAvailable(dir, baseRefName, baseCommitID string) error {
 	printAction("Fetching base branch %s", baseRefName)
 	cmd := exec.Command("git", "fetch", "--no-tags", "origin", "refs/heads/"+baseRefName)
 	cmd.Dir = dir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	cmd.Stdout = toolOutputWriter(os.Stdout)
+	cmd.Stderr = toolOutputWriter(os.Stderr)
 	if err := cmd.Run(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return fmt.Errorf("fetch base branch %q: %s", baseRefName, message)
-		}
 		return fmt.Errorf("fetch base branch %q: %w", baseRefName, err)
 	}
 
