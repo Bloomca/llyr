@@ -107,7 +107,7 @@ func review(c config, dir string, pr pullRequest) {
 
 	parsedReview, err := parseReviewOutput(output)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse the output as review JSON: %s\n\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to parse the output as review JSON: %v\n%s\n", err, output)
 		fmt.Fprintf(os.Stderr, "Please open an issue at %s and include the error above.\n", issueTrackerURL)
 		os.Exit(1)
 	}
