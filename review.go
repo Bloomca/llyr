@@ -31,11 +31,6 @@ type InlineComment struct {
 	// version (the default) or "LEFT" for the original.
 	Line int    `json:"line,omitempty"`
 	Side string `json:"side,omitempty"`
-
-	// StartLine and StartSide turn the comment into a multi-line range
-	// ending at Line/Side.
-	StartLine int    `json:"start_line,omitempty"`
-	StartSide string `json:"start_side,omitempty"`
 }
 
 // JSON payload for GH API
