@@ -15,6 +15,7 @@ type Feedback struct {
 	Level string `json:"level"`
 	File  string `json:"file"`
 	Line  int    `json:"line"`
+	Side  string `json:"side"`
 	Text  string `json:"text"`
 }
 
@@ -48,6 +49,12 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
+	diff, err := capturePullRequestDiff(dir, commitID)
+	if err != nil {
+		fmt.Printf("Could not capture the pull request diff: %v", err)
+		os.Exit(1)
+	}
+
 	cmd := executeCommand(dir, c.AgentTool, constructPrompt())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -71,7 +78,7 @@ func review(c config, dir string, pr pullRequest) {
 		os.Exit(1)
 	}
 
-	postReview(dir, pr, commitID, parsedReview)
+	postReview(dir, pr, commitID, parsedReview, diff)
 }
 
 // Capture commit before doing a review so that the GH review is
@@ -104,18 +111,32 @@ Check this PR and compare the difference with the branch it points against.
 Read the README.md file (if any), documentation and check the source code.
 
 Once you have a good understanding of the project, go ahead and review the changes.
-Provide the output in a JSON format with the following schema:
+Return only valid JSON with this schema:
 {
-  overview: string
-  feedback: { level: 'p1' | 'p2' | 'p3'; file: string; line: number; text: string }[]
+  "overview": "string",
+  "feedback": [
+    {
+      "level": "p1 | p2 | p3",
+      "file": "path relative to the repository root",
+      "line": 42,
+      "side": "LEFT | RIGHT",
+      "text": "string"
+    }
+  ]
 }
+
+Every feedback location must be a line displayed in a PR diff hunk. Use RIGHT
+and the new-file line number for additions or context lines. Use LEFT and the
+old-file line number for deletions. Do not use unchanged lines outside a diff
+hunk. Put feedback without a valid diff location in the overview instead of
+inventing a location.
 `
 
 	return strings.TrimSpace(prompt)
 }
 
-func postReview(dir string, pr pullRequest, commitID string, review Review) {
-	ghReview := createGitHubReviewStruct(review, commitID)
+func postReview(dir string, pr pullRequest, commitID string, review Review, diff pullRequestDiff) {
+	ghReview := createGitHubReviewStruct(review, commitID, diff)
 
 	data, err := json.Marshal(ghReview)
 	if err != nil {
@@ -152,7 +173,7 @@ func ghStdin(dir string, stdin io.Reader, args ...string) {
 	}
 }
 
-func createGitHubReviewStruct(review Review, commitID string) GitHubReview {
+func createGitHubReviewStruct(review Review, commitID string, diff pullRequestDiff) GitHubReview {
 	overview := strings.TrimSpace(review.Overview)
 	if overview == "" {
 		fmt.Println("Review overview cannot be empty")
@@ -160,6 +181,7 @@ func createGitHubReviewStruct(review Review, commitID string) GitHubReview {
 	}
 
 	comments := make([]InlineComment, 0, len(review.Feedback))
+	unmapped := make([]Feedback, 0)
 
 	for _, feedback := range review.Feedback {
 		level := strings.ToLower(strings.TrimSpace(feedback.Level))
@@ -170,28 +192,66 @@ func createGitHubReviewStruct(review Review, commitID string) GitHubReview {
 			os.Exit(1)
 		}
 
-		path := strings.TrimPrefix(strings.TrimSpace(feedback.File), "./")
-		if path == "" || feedback.Line <= 0 || strings.TrimSpace(feedback.Text) == "" {
+		text := strings.TrimSpace(feedback.Text)
+		if text == "" {
 			fmt.Println("Invalid inline review feedback")
 			os.Exit(1)
+		}
+
+		path, side, reviewable := diff.resolve(feedback.File, feedback.Line, feedback.Side)
+		if !reviewable {
+			unmapped = append(unmapped, feedback)
+			continue
 		}
 
 		comments = append(comments, InlineComment{
 			Path: path,
 			Line: feedback.Line,
-			Side: "RIGHT",
+			Side: side,
 			Body: fmt.Sprintf(
 				"**%s**: %s",
 				strings.ToUpper(level),
-				strings.TrimSpace(feedback.Text),
+				text,
 			),
 		})
 	}
 
 	return GitHubReview{
-		Body:     overview,
+		Body:     appendUnmappedFeedback(overview, unmapped),
 		Event:    "COMMENT",
 		CommitID: commitID,
 		Comments: comments,
 	}
+}
+
+func appendUnmappedFeedback(overview string, feedback []Feedback) string {
+	if len(feedback) == 0 {
+		return overview
+	}
+
+	var body strings.Builder
+	body.WriteString(overview)
+	body.WriteString("\n\n### Additional feedback (not attached to the diff)\n")
+
+	for _, item := range feedback {
+		fmt.Fprintf(&body, "- **%s**", strings.ToUpper(strings.TrimSpace(item.Level)))
+
+		path := normalizeFeedbackPath(item.File)
+		if path != "" {
+			fmt.Fprintf(&body, " `%s", path)
+			if item.Line > 0 {
+				fmt.Fprintf(&body, ":%d", item.Line)
+			}
+			body.WriteString("`")
+
+			side := strings.ToUpper(strings.TrimSpace(item.Side))
+			if side == diffSideLeft || side == diffSideRight {
+				fmt.Fprintf(&body, " (%s)", side)
+			}
+		}
+
+		fmt.Fprintf(&body, ": %s\n", strings.TrimSpace(item.Text))
+	}
+
+	return strings.TrimSpace(body.String())
 }
