@@ -48,14 +48,26 @@ func review(c config, dir string, pr pullRequest) {
 		fmt.Printf("Could not capture the checked-out commit: %v", err)
 		os.Exit(1)
 	}
+	if commitID != pr.headCommitID {
+		fmt.Printf(
+			"Pull request changed during checkout: expected HEAD %s, got %s; please retry",
+			pr.headCommitID,
+			commitID,
+		)
+		os.Exit(1)
+	}
 
-	diff, err := capturePullRequestDiff(dir, commitID)
+	diff, err := capturePullRequestDiff(dir, pr.baseRefName, pr.baseCommitID, commitID)
 	if err != nil {
 		fmt.Printf("Could not capture the pull request diff: %v", err)
 		os.Exit(1)
 	}
 
-	cmd := executeCommand(dir, c.AgentTool, constructPrompt())
+	cmd := executeCommand(
+		dir,
+		c.AgentTool,
+		constructPrompt(pr.baseRefName, pr.baseCommitID, commitID),
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
@@ -105,11 +117,14 @@ func captureHeadCommit(dir string) (string, error) {
 	return commitID, nil
 }
 
-func constructPrompt() string {
-	prompt := `
-Check this PR and compare the difference with the branch it points against.
-Read the README.md file (if any), documentation and check the source code.
+func constructPrompt(baseRefName, baseCommitID, headCommitID string) string {
+	prompt := fmt.Sprintf(`
+Check this PR and compare it with its target branch %q.
+The authoritative PR diff is:
+  git diff --no-ext-diff --find-renames --unified=3 %s...%s --
+Use this exact commit range rather than guessing the target branch.
 
+Read the README.md file (if any), documentation and check the source code.
 Once you have a good understanding of the project, go ahead and review the changes.
 Return only valid JSON with this schema:
 {
@@ -130,7 +145,7 @@ and the new-file line number for additions or context lines. Use LEFT and the
 old-file line number for deletions. Do not use unchanged lines outside a diff
 hunk. Put feedback without a valid diff location in the overview instead of
 inventing a location.
-`
+`, baseRefName, baseCommitID, headCommitID)
 
 	return strings.TrimSpace(prompt)
 }

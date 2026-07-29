@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -59,6 +62,39 @@ rename to new/name.go
 	}
 }
 
+func TestCapturePullRequestDiffUsesExplicitCommits(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "--quiet")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+
+	path := filepath.Join(dir, "example.go")
+	if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "example.go")
+	runGit(t, dir, "commit", "--quiet", "-m", "base")
+	baseCommit := runGit(t, dir, "rev-parse", "HEAD")
+
+	if err := os.WriteFile(path, []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "example.go")
+	runGit(t, dir, "commit", "--quiet", "-m", "head")
+	headCommit := runGit(t, dir, "rev-parse", "HEAD")
+
+	diff, err := capturePullRequestDiff(dir, "main", baseCommit, headCommit)
+	if err != nil {
+		t.Fatalf("capturePullRequestDiff() error = %v", err)
+	}
+	if _, side, ok := diff.resolve("example.go", 1, "LEFT"); !ok || side != "LEFT" {
+		t.Fatalf("deleted line was not captured: side = %q, ok = %v", side, ok)
+	}
+	if _, side, ok := diff.resolve("example.go", 1, "RIGHT"); !ok || side != "RIGHT" {
+		t.Fatalf("added line was not captured: side = %q, ok = %v", side, ok)
+	}
+}
+
 func TestParsePullRequestDiffHandlesAddedAndDeletedFiles(t *testing.T) {
 	patch := `diff --git a/deleted.go b/deleted.go
 --- a/deleted.go
@@ -82,4 +118,15 @@ diff --git a/added.go b/added.go
 	if path, side, ok := diff.resolve("added.go", 7, "RIGHT"); !ok || path != "added.go" || side != "RIGHT" {
 		t.Fatalf("added location = (%q, %q, %v)", path, side, ok)
 	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+	return strings.TrimSpace(string(output))
 }

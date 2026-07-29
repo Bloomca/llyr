@@ -21,10 +21,19 @@ func prepareRepo(link string) (string, pullRequest) {
 		os.Exit(1)
 	}
 
-	if !isPermitted(pr) {
+	metadata, err := fetchPullRequestMetadata(pr)
+	if err != nil {
+		fmt.Println("Could not read pull request metadata: ", err)
+		os.Exit(1)
+	}
+	if metadata.viewerPermission != "ADMIN" {
 		fmt.Println("Not the admin of the repository")
 		os.Exit(1)
 	}
+
+	pr.baseRefName = metadata.baseRefName
+	pr.baseCommitID = metadata.baseCommitID
+	pr.headCommitID = metadata.headCommitID
 
 	repoDir := clone(pr)
 	checkout(repoDir, pr.number)
@@ -33,9 +42,12 @@ func prepareRepo(link string) (string, pullRequest) {
 }
 
 type pullRequest struct {
-	owner  string
-	repo   string
-	number int
+	owner        string
+	repo         string
+	number       int
+	baseRefName  string
+	baseCommitID string
+	headCommitID string
 }
 
 func (pr pullRequest) slug() string { return pr.owner + "/" + pr.repo }
@@ -87,22 +99,81 @@ func parsePullRequestLink(link string) (pullRequest, error) {
 	}, nil
 }
 
-func isPermitted(pr pullRequest) bool {
-	out, err := ghCapture("", "repo", "view", pr.slug(), "--json", "viewerPermission")
+type pullRequestMetadata struct {
+	viewerPermission string
+	baseRefName      string
+	baseCommitID     string
+	headCommitID     string
+}
+
+const pullRequestMetadataQuery = `
+query PullRequestMetadata($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    viewerPermission
+    pullRequest(number: $number) {
+      baseRefName
+      baseRefOid
+      headRefOid
+    }
+  }
+}`
+
+func fetchPullRequestMetadata(pr pullRequest) (pullRequestMetadata, error) {
+	output, err := ghCapture(
+		"",
+		"api", "graphql",
+		"-f", "query="+pullRequestMetadataQuery,
+		"-F", "owner="+pr.owner,
+		"-F", "repo="+pr.repo,
+		"-F", "number="+strconv.Itoa(pr.number),
+	)
 	if err != nil {
-		return false
+		return pullRequestMetadata{}, err
 	}
 
 	var payload struct {
-		ViewerPermission string `json:"viewerPermission"`
+		Data struct {
+			Repository *struct {
+				ViewerPermission string `json:"viewerPermission"`
+				PullRequest      *struct {
+					BaseRefName  string `json:"baseRefName"`
+					BaseCommitID string `json:"baseRefOid"`
+					HeadCommitID string `json:"headRefOid"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		return false
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		return pullRequestMetadata{}, fmt.Errorf("decode pull request metadata: %w", err)
 	}
-	if payload.ViewerPermission == "" {
-		return false
+	if len(payload.Errors) > 0 {
+		messages := make([]string, 0, len(payload.Errors))
+		for _, graphQLError := range payload.Errors {
+			messages = append(messages, graphQLError.Message)
+		}
+		return pullRequestMetadata{}, errors.New(strings.Join(messages, "; "))
 	}
-	return payload.ViewerPermission == "ADMIN"
+	if payload.Data.Repository == nil {
+		return pullRequestMetadata{}, errors.New("repository was not found")
+	}
+	if payload.Data.Repository.PullRequest == nil {
+		return pullRequestMetadata{}, errors.New("pull request was not found")
+	}
+
+	pull := payload.Data.Repository.PullRequest
+	if pull.BaseRefName == "" || pull.BaseCommitID == "" || pull.HeadCommitID == "" {
+		return pullRequestMetadata{}, errors.New("pull request metadata is incomplete")
+	}
+
+	return pullRequestMetadata{
+		viewerPermission: payload.Data.Repository.ViewerPermission,
+		baseRefName:      pull.BaseRefName,
+		baseCommitID:     pull.BaseCommitID,
+		headCommitID:     pull.HeadCommitID,
+	}, nil
 }
 
 func clone(pr pullRequest) string {

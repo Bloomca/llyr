@@ -14,10 +14,6 @@ import (
 const (
 	diffSideLeft  = "LEFT"
 	diffSideRight = "RIGHT"
-
-	// Pull requests are currently compared with the repository's default
-	// branch. The three-dot diff uses the merge base with the captured head.
-	pullRequestBaseRef = "origin/HEAD"
 )
 
 type diffLocation struct {
@@ -38,13 +34,18 @@ func newPullRequestDiff() pullRequestDiff {
 	}
 }
 
-func capturePullRequestDiff(dir, headCommit string) (pullRequestDiff, error) {
-	headCommit = strings.TrimSpace(headCommit)
-	if headCommit == "" {
-		return pullRequestDiff{}, fmt.Errorf("head commit cannot be empty")
+func capturePullRequestDiff(dir, baseRefName, baseCommitID, headCommitID string) (pullRequestDiff, error) {
+	baseRefName = strings.TrimSpace(baseRefName)
+	baseCommitID = strings.TrimSpace(baseCommitID)
+	headCommitID = strings.TrimSpace(headCommitID)
+	if baseRefName == "" || baseCommitID == "" || headCommitID == "" {
+		return pullRequestDiff{}, fmt.Errorf("base ref and commit IDs cannot be empty")
+	}
+	if err := ensureBaseCommitAvailable(dir, baseRefName, baseCommitID); err != nil {
+		return pullRequestDiff{}, err
 	}
 
-	comparison := pullRequestBaseRef + "..." + headCommit
+	comparison := baseCommitID + "..." + headCommitID
 	cmd := exec.Command(
 		"git",
 		"-c", "core.quotePath=true",
@@ -68,6 +69,34 @@ func capturePullRequestDiff(dir, headCommit string) (pullRequestDiff, error) {
 	}
 
 	return parsePullRequestDiff(&stdout)
+}
+
+func ensureBaseCommitAvailable(dir, baseRefName, baseCommitID string) error {
+	if gitCommitExists(dir, baseCommitID) {
+		return nil
+	}
+
+	cmd := exec.Command("git", "fetch", "--no-tags", "origin", "refs/heads/"+baseRefName)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if message := strings.TrimSpace(stderr.String()); message != "" {
+			return fmt.Errorf("fetch base branch %q: %s", baseRefName, message)
+		}
+		return fmt.Errorf("fetch base branch %q: %w", baseRefName, err)
+	}
+
+	if !gitCommitExists(dir, baseCommitID) {
+		return fmt.Errorf("base commit %s is unavailable after fetching %q", baseCommitID, baseRefName)
+	}
+	return nil
+}
+
+func gitCommitExists(dir, commitID string) bool {
+	cmd := exec.Command("git", "cat-file", "-e", commitID+"^{commit}")
+	cmd.Dir = dir
+	return cmd.Run() == nil
 }
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)

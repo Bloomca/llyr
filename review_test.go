@@ -48,8 +48,14 @@ func TestGitHubReviewValidatesInlineFeedback(t *testing.T) {
 }
 
 func TestReviewPromptRequestsDiffSide(t *testing.T) {
-	prompt := constructPrompt()
-	for _, expected := range []string{`"side": "LEFT | RIGHT"`, "Use RIGHT", "Use LEFT"} {
+	prompt := constructPrompt("release", "base-commit", "head-commit")
+	for _, expected := range []string{
+		`"side": "LEFT | RIGHT"`,
+		"Use RIGHT",
+		"Use LEFT",
+		"target branch \"release\"",
+		"base-commit...head-commit",
+	} {
 		if !strings.Contains(prompt, expected) {
 			t.Errorf("prompt does not contain %q", expected)
 		}
