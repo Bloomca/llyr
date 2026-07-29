@@ -352,6 +352,9 @@ func TestConstructReplyPromptMarksConversationAsData(t *testing.T) {
 		`"needs_response": true`,
 		`"path": "example.go"`,
 		`"line": 42`,
+		"GitHub-flavored Markdown",
+		"inline-code formatting",
+		"GitHub review comment",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Errorf("prompt does not contain %q", expected)

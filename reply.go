@@ -625,8 +625,13 @@ one coherent response. Use earlier messages only as context and address only
 this feedback thread. Explain whether the original feedback still applies and
 answer questions or objections directly based on the current repository.
 
-Return only the response body suitable for posting as GitHub Markdown. Do not
-return JSON, a fenced block, the Llŷr attribution prefix, or meta-commentary.`, contextJSON)
+Write the response as GitHub-flavored Markdown. Use Markdown
+inline-code formatting for identifiers, commands, file paths, flags, and
+literal values, but do not over-format ordinary prose.
+
+Return only the response body suitable for posting as a GitHub review comment.
+Do not return JSON, a fenced block, the Llŷr attribution prefix, or
+meta-commentary.`, contextJSON)
 
 	return strings.TrimSpace(prompt)
 }
@@ -700,7 +705,7 @@ func generateReviewReply(config config, dir string, prompt string) (string, erro
 	cmd := executeCommand(dir, config.AgentTool, prompt)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = toolOutputWriter(os.Stderr)
+	cmd.Stderr = io.Discard
 
 	if err := cmd.Run(); err != nil {
 		var exitError *exec.ExitError
