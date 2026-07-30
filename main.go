@@ -36,6 +36,9 @@ func main() {
 		}
 		cleanRepositories()
 		return
+	case "version", "--version":
+		fmt.Printf("llyr %s\n", currentVersion())
+		return
 	case "help", "--help", "-h":
 		printHelp()
 		return
@@ -75,6 +78,7 @@ func printHelp() {
   llyr reply <pull-request-url>   Answer replies to the latest Llŷr review
   llyr config                     Change the configured agent command
   llyr clean                      Remove all cloned repositories
+  llyr version                    Show version
   llyr help                       Show command help
 
 Reply mode exposes pull-request contents and review conversations to the
